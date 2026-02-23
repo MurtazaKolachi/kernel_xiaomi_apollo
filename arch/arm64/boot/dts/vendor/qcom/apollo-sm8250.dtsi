@@ -38,6 +38,7 @@ And public attribution of xiaomi platforms(like apollo and so and)
 	pinctrl-0 = <&qupv3_se4_spi_active>;
 	pinctrl-1 = <&qupv3_se4_spi_sleep>;
 	status = "ok";
+	qcom,rt;
 	touch_spi@0 {
 		compatible = "xiaomi,spi-for-tp";
 		reg = <0>;
