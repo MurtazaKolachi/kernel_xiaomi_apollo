@@ -803,5 +803,5 @@
 &disp_rdump_memory {
 	compatible = "removed-dma-pool";
 	no-map;
-	reg = <0x0 0xb0400000 0x0 0x01000000>;
+	reg = <0x0 0xb0400000 0x0 0x00200000>;
 };
