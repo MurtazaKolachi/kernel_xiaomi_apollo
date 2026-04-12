@@ -732,6 +732,8 @@ madvise_behavior_valid(int behavior)
 	case MADV_SOFT_OFFLINE:
 	case MADV_HWPOISON:
 #endif
+	case MADV_COLD:
+	case MADV_PAGEOUT:
 		return true;
 
 	default:
