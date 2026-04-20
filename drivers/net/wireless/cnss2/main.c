@@ -492,52 +492,6 @@ out:
 	return ret;
 }
 
-static char *cnss_driver_event_to_str(enum cnss_driver_event_type type)
-{
-	switch (type) {
-	case CNSS_DRIVER_EVENT_SERVER_ARRIVE:
-		return "SERVER_ARRIVE";
-	case CNSS_DRIVER_EVENT_SERVER_EXIT:
-		return "SERVER_EXIT";
-	case CNSS_DRIVER_EVENT_REQUEST_MEM:
-		return "REQUEST_MEM";
-	case CNSS_DRIVER_EVENT_FW_MEM_READY:
-		return "FW_MEM_READY";
-	case CNSS_DRIVER_EVENT_FW_READY:
-		return "FW_READY";
-	case CNSS_DRIVER_EVENT_COLD_BOOT_CAL_START:
-		return "COLD_BOOT_CAL_START";
-	case CNSS_DRIVER_EVENT_COLD_BOOT_CAL_DONE:
-		return "COLD_BOOT_CAL_DONE";
-	case CNSS_DRIVER_EVENT_REGISTER_DRIVER:
-		return "REGISTER_DRIVER";
-	case CNSS_DRIVER_EVENT_UNREGISTER_DRIVER:
-		return "UNREGISTER_DRIVER";
-	case CNSS_DRIVER_EVENT_RECOVERY:
-		return "RECOVERY";
-	case CNSS_DRIVER_EVENT_FORCE_FW_ASSERT:
-		return "FORCE_FW_ASSERT";
-	case CNSS_DRIVER_EVENT_POWER_UP:
-		return "POWER_UP";
-	case CNSS_DRIVER_EVENT_POWER_DOWN:
-		return "POWER_DOWN";
-	case CNSS_DRIVER_EVENT_IDLE_RESTART:
-		return "IDLE_RESTART";
-	case CNSS_DRIVER_EVENT_IDLE_SHUTDOWN:
-		return "IDLE_SHUTDOWN";
-	case CNSS_DRIVER_EVENT_QDSS_TRACE_REQ_MEM:
-		return "QDSS_TRACE_REQ_MEM";
-	case CNSS_DRIVER_EVENT_QDSS_TRACE_SAVE:
-		return "QDSS_TRACE_SAVE";
-	case CNSS_DRIVER_EVENT_QDSS_TRACE_FREE:
-		return "QDSS_TRACE_FREE";
-	case CNSS_DRIVER_EVENT_MAX:
-		return "EVENT_MAX";
-	}
-
-	return "UNKNOWN";
-};
-
 int cnss_driver_event_post(struct cnss_plat_data *plat_priv,
 			   enum cnss_driver_event_type type,
 			   u32 flags, void *data)
@@ -1101,22 +1055,6 @@ void *cnss_get_virt_ramdump_mem(struct device *dev, unsigned long *size)
 	return ramdump_info->ramdump_va;
 }
 EXPORT_SYMBOL(cnss_get_virt_ramdump_mem);
-
-static const char *cnss_recovery_reason_to_str(enum cnss_recovery_reason reason)
-{
-	switch (reason) {
-	case CNSS_REASON_DEFAULT:
-		return "DEFAULT";
-	case CNSS_REASON_LINK_DOWN:
-		return "LINK_DOWN";
-	case CNSS_REASON_RDDM:
-		return "RDDM";
-	case CNSS_REASON_TIMEOUT:
-		return "TIMEOUT";
-	}
-
-	return "UNKNOWN";
-};
 
 static int cnss_do_recovery(struct cnss_plat_data *plat_priv,
 			    enum cnss_recovery_reason reason)
@@ -2764,8 +2702,6 @@ static int cnss_probe(struct platform_device *plat_dev)
 	if (ret)
 		goto deinit_event_work;
 
-	cnss_debugfs_create(plat_priv);
-
 	ret = cnss_misc_init(plat_priv);
 	if (ret)
 		goto destroy_debugfs;
@@ -2782,7 +2718,6 @@ static int cnss_probe(struct platform_device *plat_dev)
 	return 0;
 
 destroy_debugfs:
-	cnss_debugfs_destroy(plat_priv);
 	cnss_qmi_deinit(plat_priv);
 deinit_event_work:
 	cnss_event_work_deinit(plat_priv);
@@ -2815,7 +2750,6 @@ static int cnss_remove(struct platform_device *plat_dev)
 	cnss_unregister_ims_service(plat_priv);
 	cnss_unregister_coex_service(plat_priv);
 	cnss_misc_deinit(plat_priv);
-	cnss_debugfs_destroy(plat_priv);
 	cnss_qmi_deinit(plat_priv);
 	cnss_event_work_deinit(plat_priv);
 	cnss_remove_sysfs(plat_priv);
@@ -2845,10 +2779,7 @@ static int __init cnss_initialize(void)
 {
 	int ret = 0;
 
-	cnss_debug_init();
 	ret = platform_driver_register(&cnss_platform_driver);
-	if (ret)
-		cnss_debug_deinit();
 
 	return ret;
 }
@@ -2856,7 +2787,6 @@ static int __init cnss_initialize(void)
 static void __exit cnss_exit(void)
 {
 	platform_driver_unregister(&cnss_platform_driver);
-	cnss_debug_deinit();
 }
 
 module_init(cnss_initialize);
