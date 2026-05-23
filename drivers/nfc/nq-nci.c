@@ -1498,14 +1498,14 @@ static int nfc_parse_dt(struct device *dev, struct nqx_platform_data *pdata)
 
 	pdata->firm_gpio = of_get_named_gpio(np, "qcom,nq-firm", 0);
 	if (!gpio_is_valid(pdata->firm_gpio)) {
-		dev_warn(dev,
+		dev_dbg(dev,
 			"FIRM GPIO <OPTIONAL> error getting from OF node\n");
 		pdata->firm_gpio = -EINVAL;
 	}
 
 	pdata->ese_gpio = of_get_named_gpio(np, "qcom,nq-esepwr", 0);
 	if (!gpio_is_valid(pdata->ese_gpio)) {
-		dev_warn(dev,
+		dev_dbg(dev,
 			"ese GPIO <OPTIONAL> error getting from OF node\n");
 		pdata->ese_gpio = -EINVAL;
 	}
@@ -1520,7 +1520,7 @@ static int nfc_parse_dt(struct device *dev, struct nqx_platform_data *pdata)
 			(u32 *) pdata->vdd_levels,
 			ARRAY_SIZE(pdata->vdd_levels));
 	if (r) {
-		dev_err(dev, "error reading NFC VDDIO min and max value\n");
+		dev_dbg(dev, "error reading NFC VDDIO min and max value\n");
 		// set default as per datasheet
 		pdata->vdd_levels[0] = NFC_VDDIO_MIN;
 		pdata->vdd_levels[1] = NFC_VDDIO_MAX;
@@ -1529,7 +1529,7 @@ static int nfc_parse_dt(struct device *dev, struct nqx_platform_data *pdata)
 	// optional property
 	r = of_property_read_u32(np, NFC_LDO_CUR_DT_NAME, &pdata->max_current);
 	if (r) {
-		dev_err(dev, "error reading NFC current value\n");
+		dev_dbg(dev, "error reading NFC current value\n");
 		// set default as per datasheet
 		pdata->max_current = NFC_CURRENT_MAX;
 	}
