@@ -965,7 +965,7 @@ static int cam_ois_get_data(struct cam_ois_ctrl_t *o_ctrl,
 				CAMERA_SENSOR_I2C_TYPE_BYTE, CAMERA_SENSOR_I2C_TYPE_BYTE,
 				num_data);
 	}
-	o_ctrl->ois_data.data_timestamp = (uint64_t)(t_now*10000/192);//< QTimer Freq = 19.2 MHz
+	o_ctrl->ois_data.data_timestamp = boottime64;
 
 	if (rc < 0) {
 		CAM_ERR(CAM_OIS, "read failed");
@@ -1047,7 +1047,7 @@ static int cam_tele_ois_get_data(struct cam_ois_ctrl_t *o_ctrl,
             OIS_TELE_DATA_ADDR, o_ctrl->ois_tele_data.data,
             CAMERA_SENSOR_I2C_TYPE_WORD, CAMERA_SENSOR_I2C_TYPE_BYTE,
             num_data);
-    o_ctrl->ois_tele_data.data_timestamp = (uint64_t)(t_now*10000/192);//< QTimer Freq = 19.2 MHz
+    o_ctrl->ois_tele_data.data_timestamp = boottime64;
 
     if (rc < 0) {
         CAM_ERR(CAM_OIS, "read failed");
