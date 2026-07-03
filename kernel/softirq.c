@@ -230,7 +230,7 @@ static inline void lockdep_softirq_end(bool in_hardirq)
 static inline bool lockdep_softirq_start(void) { return false; }
 static inline void lockdep_softirq_end(bool in_hardirq) { }
 #endif
-
+#define LONG_SOFTIRQ_MASK ((1 << NET_TX_SOFTIRQ) | (1 << NET_RX_SOFTIRQ) | (1 << BLOCK_SOFTIRQ) | (1 << TASKLET_SOFTIRQ))
 #define softirq_deferred_for_rt(pending)		\
 ({							\
 	__u32 deferred = 0;				\
