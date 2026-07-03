@@ -1,0 +1,116 @@
+name: Build Kernel
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - '**'
+
+jobs:
+  build:
+    name: Build Kernel for Apollo
+    runs-on: ubuntu-22.04
+    
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Setup Build Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python3-pip wget
+          
+      - name: Ensure clang directory exists
+        run: mkdir -p clang
+
+      - name: Cache Clang Toolchain
+        id: cache-clang
+        uses: actions/cache@v4
+        with:
+          path: clang
+          key: clang-r563880c
+
+      - name: Download AOSP Clang Toolchain
+        if: steps.cache-clang.outputs.cache-hit != 'true'
+        run: |
+          wget -nv https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/531a564ba5426707dee226eccb19f104a7af5a5f/clang-r563880c.tar.gz -O clang.tar.gz
+          tar -xzf clang.tar.gz -C clang
+
+      - name: Clone AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/MurtazaKolachi/AnyKernel3.git AnyKernel3
+          
+      - name: Configure AnyKernel3 for Apollo
+        run: |
+          cd AnyKernel3
+          # Modify anykernel.sh to match the Apollo device
+          sed -i 's/kernel.string=.*/kernel.string=Custom Kernel for Apollo/' anykernel.sh
+          sed -i 's/do.devicecheck=1/do.devicecheck=1/' anykernel.sh
+          sed -i 's/device.name1=.*/device.name1=apollo/' anykernel.sh
+          sed -i 's/device.name2=.*/device.name2=apollopro/' anykernel.sh
+          sed -i 's/device.name3=.*/device.name3=/' anykernel.sh
+          sed -i 's/device.name4=.*/device.name4=/' anykernel.sh
+          sed -i 's/device.name5=.*/device.name5=/' anykernel.sh
+          sed -i 's/supported.versions=.*/supported.versions=/' anykernel.sh
+          sed -i 's/supported.patchlevels=.*/supported.patchlevels=/' anykernel.sh
+          # Set boot partition for AnyKernel3
+          sed -i 's|block=.*|block=/dev/block/bootdevice/by-name/boot;|' anykernel.sh
+          sed -i 's/is_slot_device=.*/is_slot_device=0;/' anykernel.sh
+          sed -i 's/ramdisk_compression=.*/ramdisk_compression=auto;/' anykernel.sh
+          # Use split_boot and flash_boot instead of repacking ramdisk
+          sed -i 's/dump_boot;/split_boot;/' anykernel.sh
+          sed -i 's/write_boot;/flash_boot;/' anykernel.sh
+
+      - name: Build Kernel
+        run: |
+          export PATH="$(pwd)/clang/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+
+          MAKE_ARGS="O=out CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- LLVM=1 LLVM_IAS=1"
+
+          # Clean and make defconfig
+          make $MAKE_ARGS clean
+          make $MAKE_ARGS mrproper
+          make $MAKE_ARGS apollo_defconfig
+
+          # Compile the kernel and redirect output to build.log so we can inspect errors
+          make -j$(nproc --all) $MAKE_ARGS Image dtbs 2>&1 | tee build.log
+          
+          # Check if the build failed and exit accordingly
+          if [ ${PIPESTATUS[0]} -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Package Kernel into AnyKernel3 Zip
+        run: |
+          if [ -f out/arch/arm64/boot/Image ]; then
+            cp out/arch/arm64/boot/Image AnyKernel3/
+          fi
+          
+          # Try to find dtb file and copy it if it exists
+          if [ -f out/arch/arm64/boot/dtb ]; then
+            cp out/arch/arm64/boot/dtb AnyKernel3/dtb
+          elif [ -f out/arch/arm64/boot/dtb.img ]; then
+            cp out/arch/arm64/boot/dtb.img AnyKernel3/dtb.img
+          elif ls out/arch/arm64/boot/dts/vendor/qcom/*.dtb 1> /dev/null 2>&1; then
+            cat out/arch/arm64/boot/dts/vendor/qcom/*.dtb > AnyKernel3/dtb
+          fi
+          
+          # Create flashable zip
+          zip -r9 ../anykernel3.zip * -x .git README.md *placeholder
+          
+      - name: Upload Build Log Artifact
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log
+          path: build.log
+      - name: Upload Kernel Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CustomKernel-Apollo
+          path: CustomKernel-Apollo.zip
