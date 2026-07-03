@@ -418,6 +418,7 @@ static int init_events_group(void)
 	return 0;
 }
 
+#if 0
 static void nr_notify_userspace(struct work_struct *work)
 {
 	sysfs_notify(notify_kobj, NULL, "aggr_top_load");
