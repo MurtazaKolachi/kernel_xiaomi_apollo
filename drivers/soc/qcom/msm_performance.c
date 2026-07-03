@@ -17,7 +17,7 @@
 #include <linux/module.h>
 #include <linux/input.h>
 #include <linux/kthread.h>
-#include <linux/sched/core_ctl.h>
+
 
 /*
  * Sched will provide the data for every 20ms window,
@@ -427,6 +427,7 @@ static void nr_notify_userspace(struct work_struct *work)
 	sysfs_notify(notify_kobj, NULL, "curr_cap_cluster");
 }
 
+#if 0
 static int msm_perf_core_ctl_notify(struct notifier_block *nb,
 					unsigned long unused,
 					void *data)
@@ -493,6 +494,7 @@ static const struct kernel_param_ops param_ops_cc_register = {
 };
 module_param_cb(core_ctl_register, &param_ops_cc_register,
 		&core_ctl_register, 0644);
+#endif
 
 static int __init msm_performance_init(void)
 {

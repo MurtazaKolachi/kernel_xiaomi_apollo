@@ -47,7 +47,7 @@ jobs:
         run: |
           cd AnyKernel3
           # Modify anykernel.sh to match the Apollo device
-          sed -i 's/kernel.string=.*/kernel.string=Custom Kernel for Apollo/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=Eclipse kernel test build/' anykernel.sh
           sed -i 's/do.devicecheck=1/do.devicecheck=1/' anykernel.sh
           sed -i 's/device.name1=.*/device.name1=apollo/' anykernel.sh
           sed -i 's/device.name2=.*/device.name2=apollopro/' anykernel.sh
@@ -101,7 +101,8 @@ jobs:
           fi
           
           # Create flashable zip
-          zip -r9 ../anykernel3.zip * -x .git README.md *placeholder
+          cd AnyKernel3
+          zip -r9 ../Eclipse-kernel-test-build.zip * -x .git README.md *placeholder
           
       - name: Upload Build Log Artifact
         if: ${{ failure() }}
@@ -112,5 +113,5 @@ jobs:
       - name: Upload Kernel Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: CustomKernel-Apollo
-          path: CustomKernel-Apollo.zip
+          name: Eclipse-kernel-test-build
+          path: Eclipse-kernel-test-build.zip
