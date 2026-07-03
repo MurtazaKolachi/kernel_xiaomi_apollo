@@ -534,7 +534,7 @@ And public attribution of xiaomi platforms(like apollo and so and)
 	qcom,sec-charger-config = <0>;
 	qcom,usb-icl-ua = <3000000>;
 	qcom,fcc-max-ua = <6000000>;
-	qcom,fv-max-uv = <4480000>;
+	qcom,fv-max-uv = <4450000>;
 	qcom,non-fcc-fv-max-uv = <4450000>;
 	qcom,dc-icl-ua = <1000000>;
 	qcom,auto-recharge-soc = <99>;
@@ -542,7 +542,7 @@ And public attribution of xiaomi platforms(like apollo and so and)
 	qcom,chg-term-current-ma = <(-220)>;
 	//qcom,step-charging-enable;
 	qcom,sw-jeita-enable;
-	qcom,chg-warm-th= <480>;
+	qcom,chg-warm-th= <440>;
 	qcom,chg-cool-th= <150>;
 	//qcom,suspend-input-on-debug-batt;
 	qcom,usbpd-phandle = <&pm8150b_pdphy>;
