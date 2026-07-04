@@ -427,7 +427,6 @@ static void nr_notify_userspace(struct work_struct *work)
 	sysfs_notify(notify_kobj, NULL, "curr_cap_cluster");
 }
 
-#if 0
 static int msm_perf_core_ctl_notify(struct notifier_block *nb,
 					unsigned long unused,
 					void *data)
