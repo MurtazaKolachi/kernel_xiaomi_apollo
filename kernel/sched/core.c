@@ -2697,7 +2697,8 @@ static inline void walt_try_to_wake_up(struct task_struct *p)
 	wallclock = sched_ktime_clock();
 	update_task_ravg(rq->curr, rq, TASK_UPDATE, wallclock, 0);
 	update_task_ravg(p, rq, TASK_WAKE, wallclock, 0);
-	note_task_waking(p, wallclock);
+	if (p != rq->curr)
+		note_task_waking(p, wallclock);
 	rq_unlock_irqrestore(rq, &rf);
 
 	rcu_read_lock();
@@ -2757,6 +2758,7 @@ try_to_wake_up(struct task_struct *p, unsigned int state, int wake_flags,
 		success = 1;
 		cpu = task_cpu(p);
 		trace_sched_waking(p);
+		walt_try_to_wake_up(p);
 		p->state = TASK_RUNNING;
 		trace_sched_wakeup(p);
 		goto out;
