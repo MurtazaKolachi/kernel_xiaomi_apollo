@@ -22,6 +22,13 @@
 #include <net/rtnetlink.h>
 #include <net/pkt_cls.h>
 #include <net/sock.h>
+#include <linux/if_ether.h>
+#include <linux/in6.h>
+#include <linux/ip.h>
+#include <linux/ipv6.h>
+#include <linux/icmpv6.h>
+#include <net/ipv6.h>
+#include <net/ndisc.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Daniel Borkmann <dborkman@redhat.com>");
@@ -87,6 +94,22 @@ static int cls_bpf_classify(struct sk_buff *skb, const struct tcf_proto *tp,
 	bool at_ingress = skb_at_tc_ingress(skb);
 	struct cls_bpf_prog *prog;
 	int ret = -1;
+
+	/* Bypass eBPF TC classification for ARP and ICMPv6 Neighbor Discovery packets */
+	if (skb->protocol == htons(ETH_P_ARP))
+		return -1;
+
+	if (skb->protocol == htons(ETH_P_IPV6)) {
+		const struct ipv6hdr *ip6h = ipv6_hdr(skb);
+		if (ip6h && ip6h->nexthdr == IPPROTO_ICMPV6) {
+			const struct icmp6hdr *icmp6h = icmp6_hdr(skb);
+			if (icmp6h && (icmp6h->icmp6_type == NDISC_NEIGHBOUR_SOLICITATION ||
+				       icmp6h->icmp6_type == NDISC_NEIGHBOUR_ADVERTISEMENT ||
+				       icmp6h->icmp6_type == NDISC_ROUTER_SOLICITATION ||
+				       icmp6h->icmp6_type == NDISC_ROUTER_ADVERTISEMENT))
+				return -1;
+		}
+	}
 
 	/* Needed here for accessing maps. */
 	rcu_read_lock();
