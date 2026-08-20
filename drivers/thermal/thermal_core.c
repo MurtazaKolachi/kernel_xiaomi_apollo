@@ -1722,14 +1722,25 @@ static ssize_t
 thermal_sconfig_show(struct device *dev,
 				      struct device_attribute *attr, char *buf)
 {
-	return snprintf(buf, PAGE_SIZE, "10\n");
+	return snprintf(buf, PAGE_SIZE, "%d\n", atomic_read(&switch_mode));
 }
 
 static ssize_t
 thermal_sconfig_store(struct device *dev,
 				      struct device_attribute *attr, const char *buf, size_t len)
 {
-	atomic_set(&switch_mode, 10);
+	int ret, val = -1;
+
+	ret = kstrtoint(buf, 10, &val);
+
+	if (ret)
+		return ret;
+
+	// Check if the value is -1 or 0, if so set to 10, else use the provided value
+	if (val == -1 || val == 0)
+		atomic_set(&switch_mode, 10);
+	else
+		atomic_set(&switch_mode, val);
 
 	return len;
 }
