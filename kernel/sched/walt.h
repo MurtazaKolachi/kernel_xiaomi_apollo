@@ -9,7 +9,6 @@
 #ifdef CONFIG_SCHED_WALT
 
 #include <linux/sched/sysctl.h>
-#include <linux/sched/core_ctl.h>
 
 #define MAX_NR_CLUSTERS			3
 
@@ -332,7 +331,12 @@ static inline void walt_update_last_enqueue(struct task_struct *p)
 extern void walt_rotate_work_init(void);
 extern void walt_rotation_checkpoint(int nr_big);
 extern unsigned int walt_rotation_enabled;
+#ifdef CONFIG_SCHED_CORE_CTL
+struct core_ctl_notif_data;
 extern void walt_fill_ta_data(struct core_ctl_notif_data *data);
+#else
+static inline void walt_fill_ta_data(void *data) { }
+#endif
 
 extern __read_mostly bool sched_freq_aggr_en;
 static inline void walt_enable_frequency_aggregation(bool enable)

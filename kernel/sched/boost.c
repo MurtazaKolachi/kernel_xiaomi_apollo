@@ -6,7 +6,6 @@
 #include "sched.h"
 #include "walt.h"
 #include <linux/of.h>
-#include <linux/sched/core_ctl.h>
 #include <trace/events/sched.h>
 
 /*
@@ -65,13 +64,17 @@ static void sched_no_boost_nop(void)
 
 static void sched_full_throttle_boost_enter(void)
 {
+#ifdef CONFIG_SCHED_CORE_CTL
 	core_ctl_set_boost(true);
+#endif
 	walt_enable_frequency_aggregation(true);
 }
 
 static void sched_full_throttle_boost_exit(void)
 {
+#ifdef CONFIG_SCHED_CORE_CTL
 	core_ctl_set_boost(false);
+#endif
 	walt_enable_frequency_aggregation(false);
 }
 

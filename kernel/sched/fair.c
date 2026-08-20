@@ -3810,7 +3810,7 @@ static inline unsigned long cfs_rq_load_avg(struct cfs_rq *cfs_rq)
 	return cfs_rq->avg.load_avg;
 }
 
-static int newidle_balance(struct rq *this_rq, struct rq_flags *rf);
+int newidle_balance(struct rq *this_rq, struct rq_flags *rf);
 
 static inline unsigned long _task_util_est(struct task_struct *p)
 {
@@ -5916,7 +5916,7 @@ static unsigned long cpu_avg_load_per_task(int cpu)
 	return 0;
 }
 
-static unsigned long cpu_runnable(struct rq *rq)
+static __maybe_unused unsigned long cpu_runnable(struct rq *rq)
 {
 	return cfs_rq_runnable_avg(&rq->cfs);
 }
@@ -9918,7 +9918,7 @@ static inline void update_sg_lb_stats(struct lb_env *env,
 
 	if (sgs->sum_h_nr_running)
 		sgs->load_per_task = sgs->group_load /
-						sgs->sum_nr_running;
+						sgs->sum_h_nr_running;
 }
 
 /**
@@ -9965,9 +9965,9 @@ static bool update_sd_pick_busiest(struct lb_env *env,
 	 * with utilization.
 	 */
 	if (env->prefer_spread) {
-		if (sgs->sum_nr_running < busiest->sum_nr_running)
+		if (sgs->sum_h_nr_running < busiest->sum_h_nr_running)
 			return false;
-		if (sgs->sum_nr_running > busiest->sum_nr_running)
+		if (sgs->sum_h_nr_running > busiest->sum_h_nr_running)
 			return true;
 		return sgs->group_util > busiest->group_util;
 	}
@@ -10720,8 +10720,7 @@ imbalanced_active_balance(struct lb_env *env)
 	 * distribution of the load on the system but also the even distribution of the
 	 * threads on a system with spare capacity
 	 */
-	if ((env->migration_type == migrate_task) &&
-	    (sd->nr_balance_failed > sd->cache_nice_tries+2))
+	if (sd->nr_balance_failed > sd->cache_nice_tries+2)
 		return 1;
 
 	return 0;
@@ -10792,7 +10791,7 @@ static int should_we_balance(struct lb_env *env)
 	 * to optimize wakeup latency.
 	 */
 	if (env->idle == CPU_NEWLY_IDLE) {
-		if (env->dst_rq->nr_running > 0 || env->dst_rq->ttwu_pending)
+		if (env->dst_rq->nr_running > 0)
 			return 0;
 		return 1;
 	}
@@ -12091,7 +12090,7 @@ static bool silver_has_big_tasks(void)
  * idle_balance is called by schedule() if this_cpu is about to become
  * idle. Attempts to pull tasks from other CPUs.
  */
-static int newidle_balance(struct rq *this_rq, struct rq_flags *rf)
+int newidle_balance(struct rq *this_rq, struct rq_flags *rf)
 {
 	unsigned long next_balance = jiffies + HZ;
 	int this_cpu = this_rq->cpu;
@@ -12111,13 +12110,6 @@ static int newidle_balance(struct rq *this_rq, struct rq_flags *rf)
 		return 0;
 
 	update_misfit_status(NULL, this_rq);
-
-	/*
-	 * There is a task waiting to run. No need to search for one.
-	 * Return 0; the task will be enqueued when switching to idle.
-	 */
-	if (this_rq->ttwu_pending)
-		return 0;
 
 	/*
 	 * We must set idle_stamp _before_ calling idle_balance(), such that we
@@ -12201,8 +12193,7 @@ static int newidle_balance(struct rq *this_rq, struct rq_flags *rf)
 		 * Stop searching for tasks to pull if there are now runnable
 		 * tasks on this rq or if active migration kicked in.
 		 */
-		if (pulled_task || this_rq->nr_running > 0 ||
-		    this_rq->ttwu_pending)
+		if (pulled_task || this_rq->nr_running > 0)
 			break;
 	}
 	rcu_read_unlock();

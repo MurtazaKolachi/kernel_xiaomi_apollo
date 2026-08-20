@@ -15,8 +15,6 @@
 #include <linux/time.h>
 #include <linux/sysfs.h>
 
-static inline int sched_set_boost(int enable) { return 0; }
-
 #define cpu_boost_attr_rw(_name)		\
 static struct kobj_attribute _name##_attr =	\
 __ATTR(_name, 0644, show_##_name, store_##_name)

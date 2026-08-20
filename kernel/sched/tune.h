@@ -31,4 +31,8 @@ void schedtune_dequeue_task(struct task_struct *p, int cpu);
 #define schedtune_dequeue_task(task, cpu) do { } while (0)
 
 #define stune_util(cpu, other_util, walt_load) cpu_util_cfs(cpu_rq(cpu))
+
+#define per_task_boost(p) 0
+#define TASK_BOOST_STRICT_MAX 2
+#define cfs_rq_runnable_load_avg(cfs_rq) cfs_rq_runnable_avg(cfs_rq)
 #endif /* CONFIG_SCHED_TUNE */

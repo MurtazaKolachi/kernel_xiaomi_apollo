@@ -2602,7 +2602,6 @@ void sched_ttwu_pending(void)
 	 * We will receive IPI after local irq enabled and then enqueue it.
 	 * Since now nr_running > 0, idle_cpu() will always get correct result.
 	 */
-	WRITE_ONCE(rq->ttwu_pending, 0);
 	rq_unlock_irqrestore(rq, &rf);
 }
 
@@ -3896,7 +3895,7 @@ void get_iowait_load(unsigned long *nr_waiters, unsigned long *load)
 {
 	struct rq *rq = this_rq();
 	*nr_waiters = atomic_read(&rq->nr_iowait);
-	*load = rq->load.weight;
+	*load = scale_load_down(rq->cfs.load.weight);
 }
 
 /*
@@ -5240,6 +5239,7 @@ static int __sched_setscheduler(struct task_struct *p,
 	struct rq_flags rf;
 	int reset_on_fork;
 	int queue_flags = DEQUEUE_SAVE | DEQUEUE_MOVE | DEQUEUE_NOCLOCK;
+	struct callback_head *head;
 	struct rq *rq;
 
 	/* The pi code expects interrupts enabled */
