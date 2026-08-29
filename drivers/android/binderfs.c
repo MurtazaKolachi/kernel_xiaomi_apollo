@@ -59,6 +59,11 @@ enum binderfs_stats_mode {
 	STATS_GLOBAL,
 };
 
+struct binder_features {
+	bool oneway_spam_detection;
+	bool freeze_notification;
+};
+
 static const match_table_t tokens = {
 	{ Opt_max, "max=%d" },
 	{ Opt_stats_mode, "stats=%s" },
@@ -68,13 +73,14 @@ static const match_table_t tokens = {
 struct binder_features {
 	bool oneway_spam_detection;
 	bool extended_error;
+	bool freeze_notification;
 };
 
 static struct binder_features binder_features = {
 	.oneway_spam_detection = true,
 	.extended_error = true,
+	.freeze_notification = true,
 };
-
 static inline struct binderfs_info *BINDERFS_I(const struct inode *inode)
 {
 	return inode->i_sb->s_fs_info;
@@ -626,6 +632,12 @@ static int init_binder_features(struct super_block *sb)
 	dentry = binderfs_create_file(dir, "extended_error",
 				      &binder_features_fops,
 				      &binder_features.extended_error);
+	if (IS_ERR(dentry))
+		return PTR_ERR(dentry);
+
+	dentry = binderfs_create_file(dir, "freeze_notification",
+				      &binder_features_fops,
+				      &binder_features.freeze_notification);
 	if (IS_ERR(dentry))
 		return PTR_ERR(dentry);
 
