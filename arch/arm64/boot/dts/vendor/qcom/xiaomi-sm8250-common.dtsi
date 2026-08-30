@@ -769,7 +769,7 @@
 };
 
 &wil6210 {
-	status = "ok";
+	status = "disabled";
 };
 
 &pcie1 {
