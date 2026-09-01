@@ -1121,16 +1121,36 @@ static void sugov_build_dvfs_headroom_lut(struct sugov_policy *sg_policy)
 	unsigned long threshold;
 	unsigned long util;
 
+	bool is_little = is_min_capacity_cpu(policy->cpu) ||
+			 (policy->cpu < 4) ||
+			 (capacity < 500);
+
 	if (sg_policy->dvfs_capacity == capacity)
 		return;
 
 	sg_policy->dvfs_capacity = capacity;
+
+	/*
+	 * Skip artificial headroom on Little cluster to prevent running at max
+	 * frequencies for light background work. Gold and Prime clusters retain
+	 * the aggressive triangular headroom curve for gaming and UI responsiveness.
+	 */
+	if (is_little) {
+		for (util = 0; util <= SCHED_CAPACITY_SCALE; util++)
+			sg_policy->dvfs_headroom_lut[util] = min(util, capacity);
+		pr_info("sugov [cpu %d]: built linear DVFS headroom LUT (capacity=%lu, cluster=little)\n",
+			policy->cpu, capacity);
+		return;
+	}
 
 	threshold = (capacity * 15) / 100;
 
 	for (util = 0; util <= SCHED_CAPACITY_SCALE; util++)
 		sg_policy->dvfs_headroom_lut[util] =
 			sugov_apply_dvfs_headroom(util, capacity, threshold);
+
+	pr_info("sugov [cpu %d]: built triangular DVFS headroom LUT (capacity=%lu, cluster=%s)\n",
+		policy->cpu, capacity, policy->cpu == 7 ? "prime" : "gold");
 }
 
 static struct sugov_policy *sugov_policy_alloc(struct cpufreq_policy *policy)

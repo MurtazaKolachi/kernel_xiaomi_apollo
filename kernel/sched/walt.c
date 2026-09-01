@@ -2671,16 +2671,16 @@ DEFINE_RWLOCK(related_thread_group_lock);
  * Task groups whose aggregate demand on a cpu is more than
  * sched_group_upmigrate need to be up-migrated if possible.
  */
-unsigned int __read_mostly sched_group_upmigrate = 20000000;
-unsigned int __read_mostly sysctl_sched_group_upmigrate_pct = 100;
+unsigned int __read_mostly sched_group_upmigrate = 18000000;
+unsigned int __read_mostly sysctl_sched_group_upmigrate_pct = 90;
 
 /*
  * Task groups, once up-migrated, will need to drop their aggregate
  * demand to less than sched_group_downmigrate before they are "down"
  * migrated.
  */
-unsigned int __read_mostly sched_group_downmigrate = 19000000;
-unsigned int __read_mostly sysctl_sched_group_downmigrate_pct = 95;
+unsigned int __read_mostly sched_group_downmigrate = 15000000;
+unsigned int __read_mostly sysctl_sched_group_downmigrate_pct = 75;
 
 static inline
 void update_best_cluster(struct related_thread_group *grp,
@@ -3745,9 +3745,9 @@ EXPORT_SYMBOL(sched_set_refresh_rate);
 
 /* Migration margins */
 unsigned int sysctl_sched_capacity_margin_up[MAX_MARGIN_LEVELS] = {
-			[0 ... MAX_MARGIN_LEVELS-1] = 1078}; /* ~5% margin */
+			[0] = 1078, [1 ... MAX_MARGIN_LEVELS-1] = 1138}; /* ~5% for little->gold, ~10% for gold->prime */
 unsigned int sysctl_sched_capacity_margin_down[MAX_MARGIN_LEVELS] = {
-			[0 ... MAX_MARGIN_LEVELS-1] = 1205}; /* ~15% margin */
+			[0] = 1205, [1 ... MAX_MARGIN_LEVELS-1] = 1365}; /* ~15% for gold->little, ~25% for prime->gold */
 
 #ifdef CONFIG_PROC_SYSCTL
 static void sched_update_updown_migrate_values(bool up)
