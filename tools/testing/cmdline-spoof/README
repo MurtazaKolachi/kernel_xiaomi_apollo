@@ -1,0 +1,66 @@
+Host test for CONFIG_CMDLINE_SPOOF_LOCK_STATE
+=============================================
+
+    make -C tools/testing/cmdline-spoof check
+
+lib/cmdline_spoof.c and fs/proc/cmdline.c are compiled straight into
+test_cmdline.c against the small kernel stubs under include/, so the code
+exercised here is the code that ships rather than a reimplementation of it.
+The real include/linux/cmdline_spoof.h is used, picked up from the source tree
+after the stub directory on the include path, so a change to that interface
+breaks this build instead of going unnoticed.
+
+The Makefile builds two binaries from the one source, with and without
+CONFIG_CMDLINE_SPOOF_LOCK_STATE, and both run the same table of cases. Each
+case pins the exact byte sequence cmdline_proc_show() emits, trailing newline
+included. test-disabled expects every command line back verbatim, which is what
+proves the option is inert when it is off.
+
+The table covers token position, repeated occurrences, whitespace runs and
+tabs, the green/yellow/red values that must pass through, near-miss spellings
+that must not be rewritten, all three lock-state keys, and quoting. The quoting
+cases matter most: argument boundaries follow next_arg() in lib/cmdline.c, so
+
+    extra="before androidboot.verifiedbootstate=orange after"
+
+is one argument and must come back untouched. An earlier revision split on
+whitespace alone and corrupted it.
+
+Beyond the table there are checks that cmdline_spoof_len() agrees with what the
+render actually produces, since that length is the size sysfs advertises for
+chosen/bootargs; that cmdline_spoof_copy() truncates and terminates correctly
+at every buffer size down to zero; and that reading a rendered property in
+small chunks reassembles it exactly, NUL included, which is the contract
+of_bootargs_read() depends on.
+
+test_of_bootargs.c covers the device-tree half the same way, compiling the real
+drivers/of/kobj.c so the shipped callbacks actually run: of_bootargs_property(),
+of_bootargs_read(), of_node_property_read() and the size that
+__of_add_property_sysfs() advertises. Registration itself is inert, since what
+matters is the read contract. It checks the advertised size against what the
+read delivers, whole and chunked reads, reads at an offset, at the end, past the
+end, with a zero count and with a negative offset, that malformed properties
+(unterminated, embedded NUL, zero length) fall back to raw bytes untouched, that
+only chosen/bootargs is a target, and that a failed kmalloc returns -ENOMEM
+rather than falling back to serving the real value. It needs -DCONFIG_OF_KOBJ,
+because otherwise of_private.h supplies stub definitions that collide with the
+real ones.
+
+Both binaries also cover the reader exemption. Boot-critical readers must keep
+seeing the real boot state, so cmdline_spoof_exempt_reader() returns
+is_global_init(current). include/linux/sched.h stubs that behind
+test_reader_is_global_init, which the tests flip to model a read by pid 1: every
+case must then come back byte for byte, whole and chunked, while an ordinary
+reader still gets the rewrite.
+
+The stubs deliberately cover nothing beyond what the source files include. If
+any of them grows a dependency, the build breaks here first, which is the
+intended signal to extend include/ rather than to work around it. Allocation
+failure is reachable through test_alloc_fail_countdown in include/linux/slab.h.
+
+Nothing in the kernel build descends into this directory, so it has no effect
+on building the kernel itself. For a sanitizer run:
+
+    clang -O1 -g -fsanitize=address,undefined -I../../.. -Iinclude \
+        -I../../../include -DCONFIG_CMDLINE_SPOOF_LOCK_STATE \
+        -o /tmp/san test_cmdline.c

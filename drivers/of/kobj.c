@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0
+#include <linux/cmdline_spoof.h>
 #include <linux/of.h>
 #include <linux/slab.h>
 
@@ -28,11 +29,71 @@ struct kobj_type of_node_ktype = {
 	.release = of_node_release,
 };
 
+#ifdef CONFIG_CMDLINE_SPOOF_LOCK_STATE
+/*
+ * The kernel command line reaches userspace a second time as the chosen node's
+ * bootargs property, readable by anyone through
+ * /sys/firmware/devicetree/base/chosen/bootargs and the /proc/device-tree
+ * symlink onto it.  Present the same rewrite there as /proc/cmdline does, so
+ * the two cannot contradict each other.  The property itself is never
+ * modified, so of_property_read_string() and friends still see the real line.
+ */
+static bool of_bootargs_property(struct kobject *kobj, struct property *pp)
+{
+	if (!of_chosen || kobj != &of_chosen->kobj)
+		return false;
+	if (strcmp(pp->name, "bootargs"))
+		return false;
+
+	/*
+	 * Only touch a well formed string property: exactly one NUL, sitting
+	 * at the very end.  Anything else is passed through as raw bytes.
+	 */
+	return pp->length > 0 &&
+	       strnlen(pp->value, pp->length) == (size_t)pp->length - 1;
+}
+
+static ssize_t of_bootargs_read(struct property *pp, char *buf, loff_t offset,
+				size_t count)
+{
+	size_t len = cmdline_spoof_len(pp->value);
+	ssize_t ret;
+	char *rendered;
+
+	/*
+	 * Render the whole value, then serve the requested window out of it, so
+	 * partial reads and seeks behave exactly as they do for any other
+	 * property.  The trailing NUL is included, matching the length a
+	 * device-tree string property reports.
+	 */
+	rendered = kmalloc(len + 1, GFP_KERNEL);
+	if (!rendered)
+		return -ENOMEM;
+
+	cmdline_spoof_copy(rendered, len + 1, pp->value);
+	ret = memory_read_from_buffer(buf, count, &offset, rendered, len + 1);
+	kfree(rendered);
+	return ret;
+}
+#endif /* CONFIG_CMDLINE_SPOOF_LOCK_STATE */
+
 static ssize_t of_node_property_read(struct file *filp, struct kobject *kobj,
 				struct bin_attribute *bin_attr, char *buf,
 				loff_t offset, size_t count)
 {
 	struct property *pp = container_of(bin_attr, struct property, attr);
+
+#ifdef CONFIG_CMDLINE_SPOOF_LOCK_STATE
+	/*
+	 * Boot-critical readers are served the stored bytes; only other
+	 * readers get the rewrite.  Unlike /proc/cmdline this decision is taken
+	 * per read() rather than per open, so an fd shared between an exempt and
+	 * a non-exempt task across a partial read could mix the two views.  No
+	 * boot path does that, and both views are individually well formed.
+	 */
+	if (of_bootargs_property(kobj, pp) && !cmdline_spoof_exempt_reader())
+		return of_bootargs_read(pp, buf, offset, count);
+#endif
 	return memory_read_from_buffer(buf, count, &offset, pp->value, pp->length);
 }
 
@@ -79,6 +140,14 @@ int __of_add_property_sysfs(struct device_node *np, struct property *pp)
 	pp->attr.size = secure ? 0 : pp->length;
 	pp->attr.read = of_node_property_read;
 
+	/*
+	 * Note for CONFIG_CMDLINE_SPOOF_LOCK_STATE: the advertised size stays
+	 * the stored length on purpose.  sysfs_kf_bin_read() clamps every read
+	 * to i_size, and an exempt reader must receive the real value in full,
+	 * which is never shorter than the rewritten one.  A rewritten value is
+	 * simply shorter than the advertised size, and of_bootargs_read()
+	 * reports end of file at its own length.
+	 */
 	rc = sysfs_create_bin_file(&np->kobj, &pp->attr);
 	WARN(rc, "error adding attribute %s to node %pOF\n", pp->name, np);
 	return rc;
