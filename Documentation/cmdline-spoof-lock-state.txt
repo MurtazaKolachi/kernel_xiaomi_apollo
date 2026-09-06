@@ -1,0 +1,498 @@
+CONFIG_CMDLINE_SPOOF_LOCK_STATE - design, decisions and open risks
+=================================================================
+
+Status: enabled builds have booted on apollo, including a build containing the
+padded device-tree rendering and allocation-free reads. Section 9 records the
+boot evidence and its limits. Runtime verification of the new device-tree
+size/read contract remains pending.
+
+CONFIG_CMDLINE_SPOOF_LOCK_STATE defaults to n; apollo_defconfig enables it.
+This document covers boot-lock-state reporting, compatibility and validation.
+
+Written by David.
+
+1. What it does
+---------------
+
+An unlocked Android bootloader advertises itself on the kernel command line.
+When enabled, this option rewrites three whole arguments as the kernel copies
+the command line out to userspace, for readers other than init:
+
+	androidboot.verifiedbootstate=orange	 -> green
+	androidboot.flash.locked=0		 -> 1
+	androidboot.vbmeta.device_state=unlocked -> locked
+
+Nothing else changes. Absent arguments are never invented. Values outside the
+list pass through, so the other verified-boot states still reach userspace
+unchanged: yellow, meaning the boot chain verified against a user-supplied trust
+root rather than the vendor's, and red, meaning verification failed. Neither
+describes an unlocked bootloader, so neither is a rewrite target. Argument order
+and quoting are preserved exactly. Spacing is preserved byte for byte in
+/proc/cmdline and the boot log; the device-tree rendering instead preserves the
+property's total length, widening a separator by up to two spaces to make up
+what a shortened value lost. See 3.6.
+
+This changes only what the kernel reports. It does not establish verified boot,
+does not relock anything, and has no effect on the boot state Keymaster and the
+TEE report for hardware-backed key attestation, which is produced in the secure
+world. It offers no guarantee about how any application behaves.
+
+
+2. Layout
+---------
+
+	include/linux/cmdline_spoof.h	interface
+	lib/cmdline_spoof.c		the transform, its policy table and the
+					reader exemption
+	fs/proc/cmdline.c		/proc/cmdline
+	drivers/of/kobj.c		device-tree chosen/bootargs
+	init/main.c			the "Kernel command line:" boot log
+	init/Kconfig			the option
+	tools/testing/cmdline-spoof/	host tests
+
+Callers push rendered bytes through an emit callback. /proc/cmdline renders
+straight into the seq_file with no allocation; the buffer-based callers size
+themselves with cmdline_spoof_len() and fill with cmdline_spoof_copy().
+
+
+3. Decisions worth remembering
+------------------------------
+
+3.1 Argument boundaries follow next_arg(), not whitespace.
+
+The first implementation split on whitespace and corrupted quoted values:
+
+	extra="before androidboot.verifiedbootstate=orange after"
+
+became "...=green after". next_arg() in lib/cmdline.c treats a leading quote as
+opening a quoted region where whitespace no longer separates and every further
+quote toggles, so the string above is one argument. cmdline_spoof_render()
+follows that. An unterminated quote swallows the rest of the line, which
+preserves those bytes rather than guessing at them.
+
+Consequence, deliberate: Android init splits /proc/cmdline on whitespace
+WITHOUT honouring quotes. A bootloader-supplied quoted value containing the
+token text would therefore still become a property. Preserving the surrounding
+argument was judged better than corrupting it.
+
+3.2 Matching is per whole argument.
+
+The key must match in full and be followed by '=', and the value must match in
+full, after stripping at most one balanced layer of quotes from the value and
+one from the whole argument. Quoting style is reproduced. So
+androidboot.verifiedbootstate="orange" becomes ="green", and near misses such
+as =orangeade, xandroidboot..., foo.androidboot... and extra=<token> are left
+alone.
+
+3.3 One presentation layer, not three.
+
+The three modified interfaces render through shared code and apply the same
+replacement rules.
+
+That is consistency of policy, not identity of output. Two interfaces can still
+print different text, for two reasons. Their sources differ: the kernel may
+prepend or append CONFIG_CMDLINE, and a boot image header command line can be
+merged with the device-tree one, so saved_command_line and chosen/bootargs need
+not hold the same string. And the view is reader-dependent: an exempt reader
+sees the stored bytes while others see the rewrite (3.5, 3.7). Rewriting applies
+only to matching whole arguments; quoted contents and malformed properties are
+not additional rewrite targets.
+
+The source string is only ever read: saved_command_line, boot_command_line, the
+device-tree property and the FDT blob are untouched, and every in-kernel
+consumer still acts on the real state.
+
+3.4 The boot log does not panic and does not leak.
+
+init/main.c prints before mm_init(), so the scratch buffer comes from memblock.
+An earlier revision used the panicking allocator on the argument that
+setup_command_line() had just succeeded three times; that was wrong. Three
+successes do not guarantee a fourth, and it converted a cosmetic logging failure
+into a boot failure. It now uses memblock_virt_alloc_nopanic() and, on failure,
+logs "Kernel command line: (unavailable)" - withholding the payload rather than
+either panicking or falling back to the unrewritten line.
+
+3.5 Boot-critical readers are exempted by task identity.
+
+Preserving the internal kernel buffers is not enough, because Android's AVB code
+lives in userspace and reads the exported view. cmdline_spoof_exempt_reader()
+returns is_global_init(current), and both /proc/cmdline and chosen/bootargs
+serve the stored bytes when it is true.
+
+Identity, not name: a process can change its name, so matching on "init" would
+be trivially spoofable. is_global_init() compares the thread group id in the
+initial pid namespace, so a container's pid 1 does not qualify.
+
+The exemption covers pid 1 and its threads, because is_global_init() compares
+the thread group id. Processes init FORKS are ordinary readers and are not
+exempt.
+
+If a helper does turn out to need the real value, extend
+cmdline_spoof_exempt_reader() with another identity test. Never match on a
+process name: any process can set its own, so a name check is a bypass, not a
+control.
+
+That last point is an open item. This audit cannot be done from the kernel tree,
+because which helpers a given userspace starts before and during first-stage
+mount, and which of them consult the boot state, is a property of that ROM. The
+tests establish init's behaviour, not every boot consumer's. To close it on a
+target build, enumerate the processes that open /proc/cmdline or the device-tree
+bootargs before the first successful mount - init's .rc files and an early trace
+are the practical route - and decide for each whether it needs the real value.
+Candidates worth checking on an A/B or dynamic-partition device include
+ueventd, snapuserd and anything invoked from an on early-init or on init action.
+
+3.6 The device-tree rendering is padded to preserve the property length.
+
+sysfs_kf_bin_read() clamps every read to i_size, which comes from attr.size and
+is one value shared by all readers. Three options were considered:
+
+  - Advertise the rewritten length. Rejected: with the exemption in place it
+    truncates init's read of the real value.
+  - Advertise the stored length and serve a shorter rewritten value. This is
+    what an earlier revision did. It boots, but stat() and a full read disagree
+    for ordinary readers, which is externally observable.
+  - Advertise the stored length and pad the rewritten value back to it. Chosen.
+
+The padding is emitted immediately after the argument that was rewritten, as
+many spaces as the replacement lost - one for orange to green, none for 0 to 1,
+two for unlocked to locked. Because it lands directly after a complete
+argument, it is always outside any quoted region and never inside a value, and
+it only ever widens the separator that follows or adds trailing whitespace at
+the end of the line. Total rendered length therefore equals the input length
+exactly, so attr.size stays the stored length, unmodified from upstream, and is
+correct for both views.
+
+This depends on strlen(to) <= strlen(from) for every rule. That is stated at
+the rules table and pinned by a host test, along with the length equality and a
+tokenisation check confirming the padded and unpadded renderings split into
+identical arguments.
+
+Whitespace contract, revised: the earlier claim that whitespace is preserved
+byte for byte now holds only for the unpadded rendering, which is what
+/proc/cmdline and the boot log use. The device-tree rendering preserves the
+length instead, and may widen a separator run by up to two spaces. Both kernel
+next_arg() and Android's whitespace split treat runs of separators as one, so
+the argument sequence is unchanged either way. /proc/cmdline is deliberately
+left unpadded: it advertises no size, so padding would cost the byte-for-byte
+whitespace guarantee for nothing.
+
+3.6.1 Reads do not allocate.
+
+of_bootargs_read() serves the requested window through
+cmdline_spoof_copy_range(), which drives the shared renderer with a sink that
+copies only bytes inside the window and discards the rest. No temporary string
+is built and nothing is allocated on the read path; a host test exercises a read
+with every allocation forced to fail. The input is still scanned from the start
+on each call, so reads are linear in the length of the command line, not
+constant time, and there is no cache.
+
+3.7 The decision is per invocation, not pinned per open.
+
+Neither interface pins the choice at open() time.
+
+/proc/cmdline regenerates on demand: seq_lseek() calls traverse(), which runs
+show() again. A task that seeks on a descriptor opened by a differently
+privileged task therefore regenerates the line under its own identity.
+chosen/bootargs decides per read(), so an fd shared across a partial read could
+serve consecutive windows from different views.
+
+It is also not one view per reader. seq_read() serves whatever is still buffered
+in m->count without calling show() at all, so on a descriptor shared between
+tasks of differing identity a continuation read can hand out bytes generated for
+the previous reader.
+
+The guarantees are therefore narrow, and worth stating exactly:
+
+  - Each generation emits one complete line from one identity. No single
+    generation mixes the two views, and buffer-growth retries stay in the same
+    task. A host test pins this.
+  - A reader that opens its own descriptor and reads from offset zero gets its
+    own view, because *ppos == 0 clears m->count and forces regeneration. That
+    covers init on the boot path, which opens /proc/cmdline for itself.
+  - Nothing stronger. In particular "init always sees the real value" is NOT
+    guaranteed for a descriptor init inherited or shares.
+
+SCOPE BOUNDARY, declared rather than worked around: sharing one /proc/cmdline
+descriptor across a privilege difference is out of scope, and the code does not
+try to give each reader its own view of such a descriptor.
+
+Two things were considered and rejected. Pinning the choice at open() inverts
+the risk, letting a descriptor opened by an ordinary process hand init the
+rewritten value outright. Invalidating another task's buffered output from
+inside a read would force regeneration, but the reader is already at a non-zero
+offset derived from the other rendering, so the result splices two views and
+buys consistency nowhere. Neither is worth the fragility of reaching into
+seq_file internals to defend a case with no known occurrence.
+
+The host tests do not model this, because reproducing seq_read()'s buffering
+would mean reimplementing it and would only test the model. Whether any
+userspace shares such a descriptor across a privilege difference has not been
+established in either direction; it has not been looked for on a running device.
+Establishing it is part of hardware validation.
+
+3.8 The rewrite remains detectable.
+
+The size mismatch that used to reveal it is gone (3.6): stat(2) and a full read
+now agree for both views. What remains observable is the padding itself, as a
+separator run one or two spaces wider than the bootloader wrote, and of course
+the values themselves differing from /sys/firmware/fdt, which still holds the
+original tree and is root readable. Concealment was never the property this
+design could offer; consistency was.
+
+
+4. Exposure paths
+-----------------
+
+Rewritten for non-exempt readers:
+
+	/proc/cmdline					0444, unprivileged
+	/sys/firmware/devicetree/base/chosen/bootargs	0444, unprivileged
+	/proc/device-tree/chosen/bootargs		symlink to the above
+
+Rewritten unconditionally:
+
+	"Kernel command line:" in dmesg			root / CAP_SYSLOG
+			(no userspace reader exists that early; this is a
+			 diagnostic surface, so it follows the rewritten view)
+
+Deliberately not handled:
+
+	/sys/firmware/fdt	0400, root only. Still serves the original
+				flattened tree including the untouched bootargs.
+				Matching it would mean rebuilding a binary blob.
+	/proc/kcore		0400, root only. Copies saved_command_line into
+				the ELF note pr_psargs, truncated to 80 bytes.
+
+Not present in this tree: /proc/atags (arm only), /proc/bootconfig (not in 4.19).
+
+Note that /proc/cmdline and chosen/bootargs need NOT match byte for byte. The
+kernel may prepend or append CONFIG_CMDLINE, and a boot image header command
+line can be merged with the device-tree one. Each interface applies the rules
+to its own input, subject to the quoting, property-format and reader boundaries
+described above.
+
+Anyone with root defeats all of this trivially, via /sys/firmware/fdt or the
+kernel image. The rule table's literal strings are in the image's read-only
+data whenever the option is compiled in.
+
+
+5. What exempting init costs
+----------------------------
+
+This is the most important thing to understand before deciding the feature is
+useful.
+
+Android init is the process that imports androidboot.* arguments from
+/proc/cmdline and republishes them as ro.boot.* properties. Exempting init means
+it imports the original values where those arguments are present. For example,
+without other property sources or overrides:
+
+	getprop ro.boot.verifiedbootstate	-> orange
+	getprop ro.boot.flash.locked		-> 0
+	getprop ro.boot.vbmeta.device_state	-> unlocked
+
+Most of Android userspace, including the framework and ordinary apps, reads
+those properties rather than /proc/cmdline. Those readers therefore still see
+the real state. What the option still changes is the view for anything that
+opens /proc/cmdline or the device-tree bootargs directly.
+
+This is a limitation of this implementation, not a law of nature. The exemption
+is keyed on task identity alone, and pid 1 covers both init stages, so the same
+exemption that protects first-stage AVB also covers the second-stage property
+import. A design that distinguished the two - by boot stage, by which file is
+being read, or by some other signal - could in principle give AVB the real value
+while letting the property import see the rewrite. Nothing like that is
+implemented here, and deliberately so: every such distinction adds a way to get
+the boot-critical case wrong. Treat it as an open design question (section 10),
+not as something ruled out.
+
+Note also when interpreting a running device: if root modules are installed,
+green or locked values in ro.boot.* may come from a userspace property override
+rather than from this patch. Observing them is not by itself evidence that this
+code produced them.
+
+
+6. Boot risk - what the exemption is defending against
+------------------------------------------------------
+
+Rewriting verifiedbootstate for init can prevent boot when AVB verification
+errors would otherwise be tolerated. The exemption in 3.5 preserves the
+original input for init; the chain below explains the risk it addresses. apollo_defconfig enables the option, so this is the risk an
+apollo image carries until a hardware boot confirms the exemption works.
+
+ a. fs_mgr/libfs_avb/util.cpp:
+
+	bool IsDeviceUnlocked() {
+	    std::string verified_boot_state;
+	    if (fs_mgr_get_boot_config("verifiedbootstate", &verified_boot_state)) {
+		return verified_boot_state == "orange";
+	    }
+	    return false;
+	}
+
+ b. fs_mgr_get_boot_config() resolves a key in this order:
+	1. <android_dt_dir>/<key>, i.e. /proc/device-tree/firmware/android/<key>
+	2. the ro.boot.<key> property
+	3. /proc/bootconfig
+	4. /proc/cmdline
+
+ c. arch/arm64/boot/dts/vendor/qcom/kona.dtsi has the firmware/android node
+    with compatible = "android,firmware", so step 1 is attempted - but that node
+    carries only vbmeta and fstab subnodes, no verifiedbootstate property. The
+    lookup falls through to ro.boot.verifiedbootstate, which init imports from
+    /proc/cmdline.
+
+ d. The same node's fstab/vendor entry has fsmgr_flags = "wait,avb", so
+    first-stage init really does verify with AVB.
+
+ e. fs_mgr/libfs_avb/fs_avb.cpp picks the verify flags from that answer:
+
+	bool allow_verification_error = IsAvbPermissive();
+	AvbSlotVerifyFlags flags = allow_verification_error
+		? AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR
+		: AVB_SLOT_VERIFY_FLAGS_NONE;
+
+    and on a verification error with a supposedly locked device:
+
+	if (!allow_verification_error) {
+	    LERROR << "ERROR_VERIFICATION / PUBLIC_KEY_REJECTED isn't allowed ";
+	    return nullptr;
+	}
+
+    AvbHandle::Open() returning nullptr fails the early mount and halts boot.
+
+Steps a to e are read from AOSP source and this tree's device tree, not observed
+on hardware. The failure is also conditional on flash state: if vbmeta was
+flashed with --disable-verity --disable-verification, or the ROM ships an fstab
+without the avb flag, verification may succeed regardless. That cannot be
+determined from the kernel tree.
+
+To back it out, set "# CONFIG_CMDLINE_SPOOF_LOCK_STATE is not set" in
+arch/arm64/configs/apollo_defconfig. That one line makes the whole feature inert:
+no symbols, no rule strings, and every interface byte for byte as upstream.
+
+Before flashing, confirm on the target userspace that no boot-critical AVB
+consumer other than pid 1 reads the boot state (section 3.5), and keep a fastboot
+recovery path available.
+
+Do NOT disable CONFIG_IKCONFIG_PROC to stop /proc/config.gz reporting that this
+option is set. That was tried on this device and ROM and it bootlooped; see
+section 9 for the exact failure. How other Android builds behave has not been
+tested here, so read this as a verified observation on this target rather than a
+statement about Android in general. Leave CONFIG_IKCONFIG_PROC=y. The option
+being visible in /proc/config.gz is accepted:
+this was always obscurity rather than a control, and the rule table's strings
+are in the kernel image regardless.
+
+
+7. Testing
+----------
+
+	make -C tools/testing/cmdline-spoof check
+
+139 checks across four binaries: 56 transform/proc checks with the option
+enabled, 41 disabled, 25 device-tree checks enabled and 17 disabled. The real
+lib/cmdline_spoof.c, fs/proc/cmdline.c and drivers/of/kobj.c are compiled against
+host stubs. The suite passes with GCC and Clang under ASan/UBSan with leak
+detection.
+
+Coverage includes whole-argument matching, quoting, non-target values, all three
+rules, source preservation, bounded copies, reader exemptions, malformed
+properties, partial reads, negative offsets, zero count and EOF. Exact padded
+output and quote-aware argument comparisons check padding placement. The sysfs
+checks compare advertised size with readable bytes for both views and verify
+that no allocation is attempted on the read path.
+
+The host suite does not reproduce seq_read() buffering across shared
+descriptors, kernel concurrency or early-boot userspace. Booting an image does
+not establish that the init exemption was necessary on that particular flash
+state, or that every other boot consumer was audited. Internal source-buffer
+preservation is established by code review and host checks, not by a complete
+hardware observation of all kernel consumers.
+
+
+8. Runtime validation
+---------------------
+
+Expect replacements only for arguments present in the original input. The
+sources for /proc/cmdline and chosen/bootargs can differ; the latter also adds
+padding. Compare parsed arguments rather than demanding identical bytes.
+
+ 1. Confirm /proc/config.gz exists and the intended configuration is enabled.
+    Keep CONFIG_IKCONFIG_PROC=y on the tested ROM; see section 9.
+ 2. Confirm boot completes and inspect the boot logs for new errors.
+ 3. Read /proc/cmdline from a non-exempt process and check replacements for
+    arguments present in the original command line.
+ 4. Read chosen/bootargs to EOF. Its byte count, including the final NUL, must
+    equal the advertised stat size. Check whole and partial reads, padding
+    placement and parsed argument values.
+ 5. Check the boot log's command-line entry: it should contain the replacements
+    or report "(unavailable)" if its scratch allocation failed.
+ 6. Record ro.boot.* properties and any installed property overrides. PID 1
+    receives the original input; green/locked properties alone do not establish
+    that this patch produced them.
+ 7. Confirm the original FDT remains unchanged and dm-verity is in its expected
+    state. An enforcing report alone does not prove all internal state intact.
+
+The PID 1 view is covered by host tests. Reading as root from a shell does not
+exercise that exemption: root is not synonymous with global init. Complete
+runtime coverage also requires auditing other boot-time readers and any shared
+descriptors crossing reader identities.
+
+
+9. Hardware results on apollo
+-----------------------------
+
+During testing on 2026-09-05, an enabled build reached Android userspace but
+repeatedly aborted system_server because CONFIG_IKCONFIG_PROC was disabled:
+
+	Could not open /proc/config.gz: 2
+	Cannot fetch or parse /proc/config.gz: No such file or directory
+	Check failed: result == OK Kernel configs could not be fetched.
+
+The failure occurred in android_os_Debug_isVmapStack during memory accounting.
+Restoring CONFIG_IKCONFIG_PROC=y allowed subsequent builds to complete boot.
+This is a compatibility requirement observed on the tested ROM, not a claim
+about every Android build. Keep config export enabled.
+
+The boot log showed androidboot.verifiedbootstate=green. The bootloader supplied
+neither androidboot.flash.locked nor androidboot.vbmeta.device_state in the
+captured command line, and the renderer did not insert either argument. Thus
+that hardware input exercised the verifiedbootstate rule; the other two rules
+are covered by host tests.
+
+The recorded successful Image.gz-dtb artifacts are identified by SHA-256:
+
+  Before the device-tree read rework:
+  43f6ce2a91545c516ffc67caa7e274e9619e79f83653c0c3fd24359e42e46807
+
+  Including padded rendering and allocation-free windowed reads:
+  b4e1fd2f128682467d6e82a25acf60e47a398c000ee6e75f37543a2762a06f22
+
+These are boot observations for individual test artifacts, not certification of
+every configuration or later source revision. The second artifact completed
+boot with the reworked code included; its exported bytes, partial-read behavior
+and stat/read agreement have not yet been recorded on hardware. Those checks
+remain pending under section 8.
+
+Boot completion is consistent with the intended init exemption. It does not
+prove that strict AVB verification would have failed without it on the tested
+flash state. No complete early-boot reader audit or hardware-attestation
+validation is claimed.
+
+
+10. Remaining work
+------------------
+
+  - Verify the padded sysfs read contract on the booted artifact (section 8).
+  - Audit boot helpers that might require the original boot state. Any further
+    exemption needs evidence and a reliable identity criterion.
+  - Evaluate a first-stage-specific exemption separately if changing property
+    import is required. No timer or process-name heuristic is implemented.
+  - Evaluate shared-descriptor semantics separately. The current limitations in
+    section 3.7 remain part of the supported behavior.
+
+The old sysfs length mismatch is addressed in the implementation and host tests;
+hardware confirmation remains pending. Disabling CONFIG_IKCONFIG_PROC is not a
+proposed follow-up: it caused the documented bootloop.

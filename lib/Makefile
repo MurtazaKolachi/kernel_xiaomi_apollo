@@ -53,6 +53,7 @@ obj-y += bcd.o div64.o sort.o parser.o debug_locks.o random32.o \
 	 once.o refcount.o usercopy.o errseq.o bucket_locks.o
 obj-$(CONFIG_STRING_SELFTEST) += test_string.o
 obj-y += string_helpers.o
+obj-$(CONFIG_CMDLINE_SPOOF_LOCK_STATE) += cmdline_spoof.o
 obj-$(CONFIG_TEST_STRING_HELPERS) += test-string_helpers.o
 obj-y += hexdump.o
 obj-$(CONFIG_TEST_HEXDUMP) += test_hexdump.o

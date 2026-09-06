@@ -26,6 +26,7 @@
 #include <linux/init.h>
 #include <linux/initrd.h>
 #include <linux/bootmem.h>
+#include <linux/cmdline_spoof.h>
 #include <linux/acpi.h>
 #include <linux/console.h>
 #include <linux/nmi.h>
@@ -383,6 +384,40 @@ static void __init setup_command_line(char *command_line)
 	strcpy(static_command_line, command_line);
 }
 
+#ifdef CONFIG_CMDLINE_SPOOF_LOCK_STATE
+/*
+ * Log the command line under the same policy /proc/cmdline and the device-tree
+ * bootargs property use.  The three need not print identical text: they have
+ * different source strings and different readers.  boot_command_line keeps the
+ * real one for every in-kernel user.
+ *
+ * This runs before mm_init(), so the scratch buffer comes from memblock rather
+ * than the slab.  A log line is not worth panicking over, so use the
+ * non-panicking allocator and drop the payload if it fails: withholding the
+ * text keeps the unrewritten line out of the log without turning a cosmetic
+ * allocation failure into a boot failure.
+ */
+static void __init print_boot_command_line(void)
+{
+	size_t len = cmdline_spoof_len(boot_command_line);
+	char *line = memblock_virt_alloc_nopanic(len + 1, 0);
+
+	if (!line) {
+		pr_notice("Kernel command line: (unavailable)\n");
+		return;
+	}
+
+	cmdline_spoof_copy(line, len + 1, boot_command_line);
+	pr_notice("Kernel command line: %s\n", line);
+	memblock_free(__pa(line), len + 1);
+}
+#else
+static void __init print_boot_command_line(void)
+{
+	pr_notice("Kernel command line: %s\n", boot_command_line);
+}
+#endif
+
 /*
  * We need to finalize in a non-__init function or else race conditions
  * between the root thread and the init thread may cause start_kernel to
@@ -587,7 +622,7 @@ asmlinkage __visible void __init start_kernel(void)
 	build_all_zonelists(NULL);
 	page_alloc_init();
 
-	pr_notice("Kernel command line: %s\n", boot_command_line);
+	print_boot_command_line();
 	/* parameters may set static keys */
 	jump_label_init();
 	parse_early_param();

@@ -644,6 +644,94 @@ config IKCONFIG_PROC
 	  This option enables access to the kernel configuration file
 	  through /proc/config.gz.
 
+config CMDLINE_SPOOF_LOCK_STATE
+	bool "Report a locked bootloader in exported kernel command lines"
+	default n
+	help
+	  An unlocked Android bootloader advertises itself on the kernel
+	  command line. Saying Y here rewrites those arguments as they are
+	  copied out to userspace, so the exported command line reports a
+	  locked device. The rewrite is applied to whole arguments only:
+
+	    androidboot.verifiedbootstate=orange      -> green
+	    androidboot.flash.locked=0                -> 1
+	    androidboot.vbmeta.device_state=unlocked  -> locked
+
+	  Boot-critical readers are exempted. Android's first-stage init decides
+	  whether AVB may run permissively from this very value:
+	  IsDeviceUnlocked() in fs_mgr/libfs_avb/util.cpp treats
+	  "verifiedbootstate" of "orange" as unlocked, and that is what makes
+	  AvbHandle::Open() pass AVB_SLOT_VERIFY_FLAGS_ALLOW_VERIFICATION_ERROR.
+	  Showing it the rewritten value would make it verify strictly and fail
+	  the early mount. So init is served the real command line, identified
+	  by is_global_init(current) rather than by a process name that anything
+	  could adopt. Only pid 1 is exempt; processes it forks are not, and any
+	  other boot-critical consumer on your userspace has to be audited.
+
+	  Understand what that costs before enabling this. init is what imports
+	  androidboot.* into the ro.boot.* properties, so those properties keep
+	  the REAL values, and everything that reads them, which is most of
+	  Android including the framework and apps, still sees the real state.
+	  Only readers that open /proc/cmdline or the device-tree bootargs
+	  directly see the rewrite. That limit is inherent: init cannot both be
+	  told the truth, which it needs in order to boot, and republish a lie.
+
+	  This has never been booted on hardware. Have a working recovery path
+	  before you try it.
+
+	  Nothing else is touched. Arguments that are absent are never
+	  invented, and values outside the list above are passed through, so
+	  the other verified-boot states still reach userspace unchanged:
+	  yellow, meaning the boot chain verified against a user-supplied
+	  trust root rather than the vendor's, and red, meaning verification
+	  failed. Neither describes an unlocked bootloader, so neither is a
+	  rewrite target. Argument order, spacing and quoting are all
+	  preserved, and a quoted value belonging to some other argument is
+	  never rewritten.
+
+	  Affected interfaces:
+
+	    /proc/cmdline
+	    /sys/firmware/devicetree/base/chosen/bootargs, and the
+	      /proc/device-tree symlink that points at it
+	    the "Kernel command line:" line in the kernel log
+
+	  Deliberately not affected: /sys/firmware/fdt still serves the
+	  original flattened device tree, including the untouched bootargs
+	  property. It is root readable only, and editing a binary blob to
+	  match would mean rebuilding it, so the real command line remains
+	  recoverable there by a privileged reader.
+
+	  This changes only what the kernel reports. It does not enable or
+	  establish verified boot, does not relock the bootloader, and does
+	  not modify saved_command_line, boot_command_line or the device-tree
+	  property, so dm-verity and every other in-kernel consumer still act
+	  on the real boot state. It has no effect on the boot state that
+	  Keymaster and the TEE report for hardware-backed key attestation,
+	  which is produced in the secure world, and it therefore offers no
+	  guarantee about how any particular application will behave.
+
+	  Because init is exempt, the ro.boot.* properties it imports keep the
+	  real values: ro.boot.verifiedbootstate, ro.boot.flash.locked and
+	  ro.boot.vbmeta.device_state, and anything derived from them, are not
+	  changed by this option on its own.
+
+	  Note also that a reader can detect the rewrite. The device-tree
+	  rendering pads a shortened value with spaces so the property keeps
+	  its original length for every reader, which makes stat() and a read
+	  agree but leaves a separator run wider than the bootloader wrote.
+	  /proc/cmdline and the kernel log are not padded and keep their
+	  spacing byte for byte.
+	  /proc/config.gz will also report that this option is set; do NOT try
+	  to hide that by turning off CONFIG_IKCONFIG_PROC. On the apollo ROM
+	  this was tested against, system_server CHECK()s that it can read
+	  /proc/config.gz and aborts when it cannot (AOSP b/151092221), which
+	  bootlooped the device once userspace started. Other Android builds
+	  were not tested, so treat that as an observation on this target
+	  rather than a rule about Android generally.
+
+	  If unsure, say N.
+
 config IKHEADERS
 	tristate "Enable kernel headers through /sys/kernel/kheaders.tar.xz"
 	depends on SYSFS
