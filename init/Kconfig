@@ -681,9 +681,11 @@ config CMDLINE_SPOOF_LOCK_STATE
 
 	  Nothing else is touched. Arguments that are absent are never
 	  invented, and values outside the list above are passed through, so
-	  the yellow and red verified-boot states, which report a real
-	  verification failure rather than an unlocked bootloader, still reach
-	  userspace unchanged. Argument order, spacing and quoting are all
+	  the other verified-boot states still reach userspace unchanged:
+	  yellow, meaning the boot chain verified against a user-supplied
+	  trust root rather than the vendor's, and red, meaning verification
+	  failed. Neither describes an unlocked bootloader, so neither is a
+	  rewrite target. Argument order, spacing and quoting are all
 	  preserved, and a quoted value belonging to some other argument is
 	  never rewritten.
 
@@ -715,9 +717,18 @@ config CMDLINE_SPOOF_LOCK_STATE
 	  changed by this option on its own.
 
 	  Note also that a reader can detect the rewrite. The device-tree
-	  property advertises the stored length while serving the shorter
-	  rewritten value, because sysfs has one size for all readers and an
-	  exempt reader must be able to read the real value in full.
+	  rendering pads a shortened value with spaces so the property keeps
+	  its original length for every reader, which makes stat() and a read
+	  agree but leaves a separator run wider than the bootloader wrote.
+	  /proc/cmdline and the kernel log are not padded and keep their
+	  spacing byte for byte.
+	  /proc/config.gz will also report that this option is set; do NOT try
+	  to hide that by turning off CONFIG_IKCONFIG_PROC. On the apollo ROM
+	  this was tested against, system_server CHECK()s that it can read
+	  /proc/config.gz and aborts when it cannot (AOSP b/151092221), which
+	  bootlooped the device once userspace started. Other Android builds
+	  were not tested, so treat that as an observation on this target
+	  rather than a rule about Android generally.
 
 	  If unsure, say N.
 

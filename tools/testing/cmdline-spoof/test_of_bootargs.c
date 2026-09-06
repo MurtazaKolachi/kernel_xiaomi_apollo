@@ -33,6 +33,14 @@ bool test_reader_is_global_init;
 #define UNLOCKED ORANGE " androidboot.flash.locked=0"
 #define LOCKED GREEN " androidboot.flash.locked=1"
 
+/*
+ * What the device-tree path actually serves: the same rewrite, padded back to
+ * the width of the input.  green is one byte shorter than orange, so a single
+ * space follows it and widens the separator; 1 and 0 are the same width, so
+ * androidboot.flash.locked needs none.  strlen(LOCKED_PADDED) == strlen(UNLOCKED).
+ */
+#define LOCKED_PADDED GREEN "  androidboot.flash.locked=1"
+
 static size_t failures;
 
 static void report(int ok, const char *name)
@@ -129,7 +137,8 @@ static void check_raw(const char *what, struct kobject *kobj)
 /*
  * sysfs_kf_bin_read() clamps every read to i_size, so the advertised size must
  * stay the stored length: an exempt reader has to receive the real value in
- * full, and it is never shorter than the rewritten one.
+ * full.  The rewritten view is padded back to the same width, so the size is
+ * exact for both readers rather than merely an upper bound.
  */
 static void check_advertised_size(void)
 {
@@ -142,10 +151,6 @@ static void check_advertised_size(void)
 	       "the advertised size stays the stored length");
 	report(test_prop.attr.attr.mode == 0444,
 	       "bootargs keeps its 0444 mode");
-#ifdef CONFIG_CMDLINE_SPOOF_LOCK_STATE
-	report(cmdline_spoof_len(test_prop.value) + 1 <= test_prop.attr.size,
-	       "the rewritten value fits inside the advertised size");
-#endif
 
 	/* A property that is not a target keeps the stored length. */
 	setup_string_prop("stdout-path", UNLOCKED);
@@ -160,7 +165,7 @@ static void check_whole_read(void)
 
 #ifdef CONFIG_CMDLINE_SPOOF_LOCK_STATE
 	check_presented("chosen/bootargs presents the rewritten value",
-			&chosen_node.kobj, LOCKED, strlen(LOCKED) + 1);
+			&chosen_node.kobj, LOCKED_PADDED, strlen(LOCKED_PADDED) + 1);
 #else
 	check_raw("chosen/bootargs presents the stored value",
 		  &chosen_node.kobj);
@@ -182,7 +187,7 @@ static void check_partial_reads(void)
 	setup_string_prop("bootargs", UNLOCKED);
 
 #ifdef CONFIG_CMDLINE_SPOOF_LOCK_STATE
-	want = LOCKED;
+	want = LOCKED_PADDED;
 #else
 	want = UNLOCKED;
 #endif
@@ -296,34 +301,123 @@ static void check_init_exemption(void)
 
 	test_reader_is_global_init = false;
 	got = prop_read(&chosen_node.kobj, buf, 0, sizeof(buf));
-	ok = got == (ssize_t)(strlen(LOCKED) + 1) &&
-	     !memcmp(buf, LOCKED, strlen(LOCKED) + 1);
+	ok = got == (ssize_t)(strlen(LOCKED_PADDED) + 1) &&
+	     !memcmp(buf, LOCKED_PADDED, strlen(LOCKED_PADDED) + 1);
 	report(ok, "an ordinary reader still gets the rewritten bootargs");
 }
 
-static void check_alloc_failure(void)
+/*
+ * The read path must not allocate at all.  The stub allocator decrements
+ * test_alloc_fail_countdown on every request, so an unchanged counter after a
+ * read proves no allocation was even attempted - stronger than merely
+ * surviving failures.  Arm it to fail anyway, so a regression that starts
+ * allocating breaks the read rather than passing quietly.
+ */
+static void check_read_does_not_allocate(void)
 {
+	const unsigned int armed = 1000;
 	char buf[512];
+	unsigned int attempts;
 	ssize_t got;
 
 	setup_string_prop("bootargs", UNLOCKED);
 
-	test_alloc_fail_countdown = 1;
+	test_alloc_fail_countdown = armed;
 	got = prop_read(&chosen_node.kobj, buf, 0, sizeof(buf));
+	attempts = armed - test_alloc_fail_countdown;
 	test_alloc_fail_countdown = 0;
 
-	/*
-	 * Failing closed matters here: the read must report an error rather
-	 * than fall back to serving the unrewritten property.
-	 */
-	report(got == -ENOMEM,
-	       "a failed allocation returns -ENOMEM, not the raw value");
-
-	got = prop_read(&chosen_node.kobj, buf, 0, sizeof(buf));
-	report(got == (ssize_t)(strlen(LOCKED) + 1),
-	       "reads recover after an allocation failure");
+	report(attempts == 0, "a read attempts no allocation at all");
+	report(got == (ssize_t)(strlen(LOCKED_PADDED) + 1) &&
+	       !memcmp(buf, LOCKED_PADDED, strlen(LOCKED_PADDED) + 1),
+	       "a read succeeds with every allocation failing");
 }
-#endif
+
+/*
+ * The advertised size must equal the bytes actually readable, for BOTH views.
+ * That is the inconsistency this design exists to remove.
+ */
+static void check_size_matches_readable(void)
+{
+	char buf[512];
+	size_t advertised;
+	ssize_t got;
+	int pass;
+
+	setup_string_prop("bootargs", UNLOCKED);
+	__of_add_property_sysfs(&chosen_node, &test_prop);
+	advertised = test_prop.attr.size;
+
+	for (pass = 0; pass < 2; pass++) {
+		test_reader_is_global_init = pass;
+		got = prop_read(&chosen_node.kobj, buf, 0, sizeof(buf));
+		report(got == (ssize_t)advertised,
+		       pass ? "pid 1 reads exactly the advertised size"
+			    : "an ordinary reader reads exactly the advertised size");
+	}
+	test_reader_is_global_init = false;
+}
+
+/*
+ * Every byte boundary, exercised one byte at a time.  This walks across both
+ * rewritten tokens, the padding, and the final NUL, and checks each single-byte
+ * read against the expected rendering.
+ */
+static void check_every_boundary(void)
+{
+	char whole[512];
+	char one[1];
+	size_t total;
+	size_t i;
+	int ok = 1;
+	int pass;
+
+	setup_string_prop("bootargs", UNLOCKED);
+
+	for (pass = 0; pass < 2; pass++) {
+		const char *want;
+
+		test_reader_is_global_init = pass;
+		want = pass ? UNLOCKED : LOCKED_PADDED;
+		total = strlen(want) + 1;
+
+		if (prop_read(&chosen_node.kobj, whole, 0, sizeof(whole)) !=
+		    (ssize_t)total)
+			ok = 0;
+
+		for (i = 0; i < total; i++) {
+			if (prop_read(&chosen_node.kobj, one, (loff_t)i, 1) != 1 ||
+			    one[0] != want[i])
+				ok = 0;
+		}
+
+		/* One past the last byte, including the NUL, is EOF. */
+		if (prop_read(&chosen_node.kobj, one, (loff_t)total, 1) != 0)
+			ok = 0;
+	}
+	test_reader_is_global_init = false;
+
+	report(ok, "single-byte reads match at every offset, both views");
+}
+#endif /* CONFIG_CMDLINE_SPOOF_LOCK_STATE */
+
+/* Reading must never disturb the stored property, in either configuration. */
+static void check_source_bytes_preserved(void)
+{
+	char buf[512];
+	size_t len = strlen(UNLOCKED) + 1;
+
+	setup_string_prop("bootargs", UNLOCKED);
+
+	prop_read(&chosen_node.kobj, buf, 0, sizeof(buf));
+	prop_read(&chosen_node.kobj, buf, 7, 11);
+	test_reader_is_global_init = true;
+	prop_read(&chosen_node.kobj, buf, 0, sizeof(buf));
+	test_reader_is_global_init = false;
+
+	report(!memcmp(test_prop.value, UNLOCKED, len),
+	       "the stored property is unchanged after reads");
+}
 
 int main(void)
 {
@@ -338,9 +432,12 @@ int main(void)
 	check_partial_reads();
 	check_malformed();
 	check_scope();
+	check_source_bytes_preserved();
 #ifdef CONFIG_CMDLINE_SPOOF_LOCK_STATE
 	check_init_exemption();
-	check_alloc_failure();
+	check_read_does_not_allocate();
+	check_size_matches_readable();
+	check_every_boundary();
 #endif
 
 	free(test_prop.value);

@@ -38,6 +38,22 @@ size_t cmdline_spoof_len(const char *cmdline);
  */
 size_t cmdline_spoof_copy(char *dst, size_t dst_size, const char *cmdline);
 
+/*
+ * Copy at most @count bytes of the length-preserving rendering of @cmdline,
+ * starting at byte @offset, into @dst.  Returns the number of bytes copied.
+ *
+ * This rendering pads a shortened value with spaces immediately after the
+ * argument it belongs to, so its total length always equals strlen(@cmdline).
+ * That is what lets an interface advertise one size for every reader while
+ * still serving the unrewritten bytes to an exempt one.
+ *
+ * Nothing is allocated: bytes outside the window are counted and dropped as
+ * they are produced.  The input is still scanned from the start on every call,
+ * so a read is linear in the length of @cmdline, not constant time.
+ */
+size_t cmdline_spoof_copy_range(char *dst, size_t count, size_t offset,
+				const char *cmdline);
+
 #endif /* CONFIG_CMDLINE_SPOOF_LOCK_STATE */
 
 #endif /* _LINUX_CMDLINE_SPOOF_H */

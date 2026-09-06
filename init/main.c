@@ -386,9 +386,10 @@ static void __init setup_command_line(char *command_line)
 
 #ifdef CONFIG_CMDLINE_SPOOF_LOCK_STATE
 /*
- * Log the command line the way /proc/cmdline and the device-tree bootargs
- * property present it, so the three agree.  boot_command_line keeps the real
- * one for every in-kernel user.
+ * Log the command line under the same policy /proc/cmdline and the device-tree
+ * bootargs property use.  The three need not print identical text: they have
+ * different source strings and different readers.  boot_command_line keeps the
+ * real one for every in-kernel user.
  *
  * This runs before mm_init(), so the scratch buffer comes from memblock rather
  * than the slab.  A log line is not worth panicking over, so use the

@@ -39,7 +39,8 @@ static int cmdline_proc_show(struct seq_file *m, void *v)
 	 * from offset zero gets its own view, because *ppos == 0 clears
 	 * m->count and forces regeneration.  That covers init on the boot path,
 	 * which opens /proc/cmdline for itself.  Sharing this descriptor across
-	 * a privilege boundary is out of scope; nothing on the boot path does.
+	 * a privilege boundary is out of scope for this implementation; whether
+	 * any userspace actually does so has not been established either way.
 	 */
 	if (cmdline_spoof_exempt_reader())
 		seq_puts(m, saved_command_line);

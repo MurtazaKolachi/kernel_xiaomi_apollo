@@ -464,6 +464,185 @@ static void check_non_init_still_rewritten(void)
 }
 
 /*
+ * Every rule must shrink or keep the value's width, or the padded rendering
+ * could not restore the original length.  lib/cmdline_spoof.c says so; pin it.
+ */
+static void check_rules_never_grow(void)
+{
+	size_t i;
+	int ok = 1;
+
+	for (i = 0; i < ARRAY_LEN(cmdline_spoof_rules); i++)
+		if (strlen(cmdline_spoof_rules[i].to) >
+		    strlen(cmdline_spoof_rules[i].from))
+			ok = 0;
+
+	report(ok, "every rule's replacement is no wider than its match");
+}
+
+/*
+ * The padded rendering must be exactly as long as its input, for every case.
+ * That equality is what lets the device-tree attribute advertise one size for
+ * both readers.
+ */
+static void check_padded_length_is_exact(void)
+{
+	size_t i;
+	int ok = 1;
+
+	for (i = 0; i < ARRAY_LEN(cases); i++) {
+		char buf[512];
+		size_t in_len = strlen(cases[i].cmdline);
+		size_t got = cmdline_spoof_copy_range(buf, sizeof(buf), 0,
+						      cases[i].cmdline);
+
+		if (got != in_len) {
+			printf("       padded length %zu != input %zu for: %s\n",
+			       got, in_len, cases[i].name);
+			ok = 0;
+		}
+	}
+
+	report(ok, "the padded rendering is exactly as long as its input");
+}
+
+static int is_sep(char c)
+{
+	return c == ' ' || c == '\t' || c == '\n';
+}
+
+/*
+ * Split exactly the way next_arg() in lib/cmdline.c does, so quoted values stay
+ * whole: a leading quote opens a quoted region, every further quote toggles it,
+ * and whitespace separates only outside one.  Arguments are joined with '\n' so
+ * two splits can be compared as one buffer.
+ */
+static void tokenise(const char *s, char *out, size_t *out_len)
+{
+	size_t n = 0;
+
+	while (*s) {
+		const char *start;
+		int in_quote;
+
+		if (is_sep(*s)) {
+			s++;
+			continue;
+		}
+
+		start = s;
+		in_quote = *s == '"';
+		if (in_quote)
+			s++;
+
+		while (*s) {
+			if (is_sep(*s) && !in_quote)
+				break;
+			if (*s == '"')
+				in_quote = !in_quote;
+			s++;
+		}
+
+		memcpy(out + n, start, (size_t)(s - start));
+		n += (size_t)(s - start);
+		out[n++] = '\n';
+	}
+
+	out[n] = '\0';
+	*out_len = n;
+}
+
+/*
+ * Padding may only widen separators, so a quote-aware split of the padded
+ * rendering must yield byte-identical arguments to a split of the unpadded one.
+ * Because the splitter keeps quoted values whole, any space that had landed
+ * inside a quoted value would show up as a differing argument here.
+ */
+static void check_padding_parser_equivalent(void)
+{
+	size_t i;
+	int ok = 1;
+
+	for (i = 0; i < ARRAY_LEN(cases); i++) {
+		char padded[512], plain[512];
+		char pad_tok[512], plain_tok[512];
+		size_t pad_tok_len, plain_tok_len;
+		size_t plen;
+
+		plen = cmdline_spoof_copy_range(padded, sizeof(padded) - 1, 0,
+						cases[i].cmdline);
+		padded[plen] = '\0';
+		cmdline_spoof_copy(plain, sizeof(plain), cases[i].cmdline);
+
+		tokenise(padded, pad_tok, &pad_tok_len);
+		tokenise(plain, plain_tok, &plain_tok_len);
+
+		if (pad_tok_len != plain_tok_len ||
+		    memcmp(pad_tok, plain_tok, pad_tok_len)) {
+			printf("       arguments differ after padding for: %s\n",
+			       cases[i].name);
+			ok = 0;
+		}
+	}
+
+	report(ok, "a quote-aware split is identical padded and unpadded");
+}
+
+/*
+ * Exact padded output, spelled out, with the quoted forms included so the
+ * placement of every space is pinned rather than inferred.
+ */
+static const struct {
+	const char *in;
+	const char *padded;
+} padded_cases[] = {
+	{ ORANGE, GREEN " " },
+	{ ORANGE " b=2", GREEN "  b=2" },
+	{ "a=1 " ORANGE, "a=1 " GREEN " " },
+	{ "androidboot.verifiedbootstate=\"orange\"",
+	  "androidboot.verifiedbootstate=\"green\" " },
+	{ "\"" ORANGE "\"", "\"" GREEN "\" " },
+	{ "extra=\"a " ORANGE " b\" " ORANGE,
+	  "extra=\"a " ORANGE " b\" " GREEN " " },
+	{ "extra=\"before " ORANGE " after\"",
+	  "extra=\"before " ORANGE " after\"" },
+	{ "androidboot.vbmeta.device_state=unlocked",
+	  "androidboot.vbmeta.device_state=locked  " },
+	{ "androidboot.vbmeta.device_state=unlocked x=1",
+	  "androidboot.vbmeta.device_state=locked   x=1" },
+	{ "androidboot.flash.locked=0 y=2", "androidboot.flash.locked=1 y=2" },
+};
+
+static void check_padded_output_exact(void)
+{
+	size_t i;
+	int ok = 1;
+
+	for (i = 0; i < ARRAY_LEN(padded_cases); i++) {
+		char got[512];
+		size_t len = cmdline_spoof_copy_range(got, sizeof(got) - 1, 0,
+						      padded_cases[i].in);
+
+		got[len] = '\0';
+		if (len != strlen(padded_cases[i].padded) ||
+		    memcmp(got, padded_cases[i].padded, len)) {
+			fputs("       in   ", stdout);
+			print_escaped(padded_cases[i].in,
+				      strlen(padded_cases[i].in));
+			fputs("\n       want ", stdout);
+			print_escaped(padded_cases[i].padded,
+				      strlen(padded_cases[i].padded));
+			fputs("\n       got  ", stdout);
+			print_escaped(got, len);
+			putchar('\n');
+			ok = 0;
+		}
+	}
+
+	report(ok, "padded output matches byte for byte, quoted forms included");
+}
+
+/*
  * The rewrite must never grow the line: init/main.c sizes a memblock buffer
  * from cmdline_spoof_len(), and the device-tree size is advertised up front.
  */
@@ -503,6 +682,10 @@ int main(void)
 	check_init_sees_real();
 	check_non_init_still_rewritten();
 	check_regeneration_is_whole();
+	check_rules_never_grow();
+	check_padded_length_is_exact();
+	check_padded_output_exact();
+	check_padding_parser_equivalent();
 #endif
 
 	if (failures)
