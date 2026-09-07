@@ -55,7 +55,7 @@
 #undef pr_info
 #undef pr_err
 #undef pr_debug
-#define pr_debug(fmt, args...) printk(KERN_INFO "[CSPL] " pr_fmt(fmt), ##args)
+#define pr_debug(fmt, args...) no_printk(fmt, ##args)
 #define pr_info(fmt, args...) printk(KERN_INFO "[CSPL] " pr_fmt(fmt), ##args)
 #define pr_err(fmt, args...) printk(KERN_ERR "[CSPL] " pr_fmt(fmt), ##args)
 
