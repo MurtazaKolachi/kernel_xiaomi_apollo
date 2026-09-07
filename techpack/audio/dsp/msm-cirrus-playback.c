@@ -1155,7 +1155,7 @@ void msm_crus_pb_add_controls(struct snd_soc_component *component)
 EXPORT_SYMBOL(msm_crus_pb_add_controls);
 int crus_afe_port_start(u16 port_id)
 {
-	pr_info("%s: 0x%x\n", __func__, port_id);
+	pr_debug("%s: 0x%x\n", __func__, port_id);
 #if 0
 //CSPL do not be involved in AFE
 	struct snd_kcontrol kcontrol;
@@ -1179,7 +1179,7 @@ int crus_afe_port_start(u16 port_id)
 EXPORT_SYMBOL(crus_afe_port_start);
 int crus_afe_port_close(u16 port_id)
 {
-	pr_info("%s: 0x%x\n", __func__, port_id);
+	pr_debug("%s: 0x%x\n", __func__, port_id);
 #if 0
 //CSPL do not be involved in AFE
 	if (port_id != this_ctrl.ff_port)

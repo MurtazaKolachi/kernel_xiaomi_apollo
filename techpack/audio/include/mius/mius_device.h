@@ -36,13 +36,13 @@ struct mius_device {
 extern struct class *mius_class;
 
 #define MI_PRINT_E(string, arg...)                                             \
-	pr_err("[MIUS] : (%s) : " string "\n", __func__, ##arg)
+	pr_debug("[MIUS] : (%s) : " string "\n", __func__, ##arg)
 
 #define MI_PRINT_W(string, arg...)                                             \
-	pr_warn("[MIUS] : (%s) : " string "\n", __func__, ##arg)
+	pr_debug("[MIUS] : (%s) : " string "\n", __func__, ##arg)
 
 #define MI_PRINT_I(string, arg...)                                             \
-	pr_info("[MIUS] : (%s) : " string "\n", __func__, ##arg)
+	pr_debug("[MIUS] : (%s) : " string "\n", __func__, ##arg)
 
 #define MI_PRINT_D(string, arg...)                                             \
 	pr_debug("[MIUS] : (%s) : " string "\n", __func__, ##arg)
