@@ -122,6 +122,9 @@ int read_rb(char *data, int32_t size)
 	wake_up_interruptible(&grb->wait_q);
 	pr_debug("read_rb: after read %d  write index %d, read index %d, aval_size %d", read_bytes, tail, head, grb->aval_size);
 
+	/* Never replay stale bytes when a streaming producer falls behind. */
+	if (read_bytes < size && !atomic_read(&grb->eof))
+		memset((char *)data + read_bytes, 0, size - read_bytes);
 	return atomic_read(&grb->eof) ? read_bytes : size;
 }
 
@@ -183,10 +186,11 @@ int create_rb(void)
 
 	return 0;
 err:
-	if (grb)
-		kfree(grb);
-	if (grb->gbuffer)
+	if (grb) {
 		kfree(grb->gbuffer);
+		kfree(grb);
+		grb = NULL;
+	}
 	return  -EPERM;
 }
 
