@@ -4036,7 +4036,6 @@ static int aw8697_parse_dt_common(struct device *dev, struct aw8697 *aw8697,
 				  struct device_node *np)
 {
 	unsigned int val = 0;
-	unsigned int rtp_time[175];
 	struct qti_hap_config *config = &aw8697->config;
 	struct device_node *child_node;
 	struct qti_hap_effect *effect;
@@ -4071,12 +4070,17 @@ static int aw8697_parse_dt_common(struct device *dev, struct aw8697 *aw8697,
 	if (val != 0)
 		printk("vib_f0_cali_percen not found\n");
 
-	val =
-	    of_property_read_u32_array(np, "vib_rtp_time", rtp_time,
-				       ARRAY_SIZE(rtp_time));
-	if (val != 0)
-		printk("%s vib_rtp_time not found\n", __func__);
-	memcpy(aw8697->info.rtp_time, rtp_time, sizeof(rtp_time));
+	rc = of_property_count_u32_elems(np, "vib_rtp_time");
+	if (rc <= 0 || rc > 32768)
+		return -EINVAL;
+	aw8697->info.rtp_time_count = rc;
+	aw8697->info.rtp_time = devm_kcalloc(dev, rc, sizeof(unsigned int), GFP_KERNEL);
+	if (!aw8697->info.rtp_time)
+		return -ENOMEM;
+	rc = of_property_read_u32_array(np, "vib_rtp_time", aw8697->info.rtp_time,
+				    aw8697->info.rtp_time_count);
+	if (rc)
+		return rc;
 
 	val =
 	    of_property_read_u32(np, "vib_effect_id_boundary",
@@ -4088,6 +4092,10 @@ static int aw8697_parse_dt_common(struct device *dev, struct aw8697 *aw8697,
 				 &aw8697->info.effect_max);
 	if (val != 0)
 		printk("%s vib_effect_max not found\n", __func__);
+
+	if (aw8697->info.effect_max >= aw8697->info.rtp_time_count ||
+	    aw8697->info.effect_id_boundary > aw8697->info.effect_max)
+		return -EINVAL;
 
 	config->play_rate_us = HAP_PLAY_RATE_US_DEFAULT;
 	rc = of_property_read_u32(np, "qcom,play-rate-us", &tmp);
@@ -4222,7 +4230,7 @@ static int aw8697_parse_dt_common(struct device *dev, struct aw8697 *aw8697,
 		effect->brake_pattern_length = tmp;
 	}
 
-	for (j = 0; j < 175; j++)
+	for (j = 0; j < aw8697->info.rtp_time_count; j++)
 		aw_dev_info(aw8697->dev,
 			    " 20190420_dt aw8697->info.rtp_time[%d]: %d\n", j,
 			    aw8697->info.rtp_time[j]);
@@ -4570,7 +4578,6 @@ static int aw8697_haptics_upload_effect(struct input_dev *dev,
 		 ret = wait_event_interruptible(aw8697->stop_wait_q, atomic_read(&aw8697->exit_in_rtp_loop) == 0);
 		 pr_info("%s  wakeup \n", __func__);
 		 if (ret == -ERESTARTSYS) {
-			 mutex_unlock(&aw8697->lock);
 			 pr_err("%s wake up by signal return erro\n", __func__);
 			 return ret;
 		 }
@@ -4585,7 +4592,8 @@ static int aw8697_haptics_upload_effect(struct input_dev *dev,
 		aw8697->effect_id = aw8697->info.effect_id_boundary;
 
 	} else if (aw8697->effect_type == FF_PERIODIC) {
-		if (aw8697->effects_count == 0) {
+		if (aw8697->effects_count == 0 ||
+		    effect->u.periodic.custom_len < CUSTOM_DATA_LEN) {
 			mutex_unlock(&aw8697->lock);
 			return -EINVAL;
 		}
@@ -4602,9 +4610,11 @@ static int aw8697_haptics_upload_effect(struct input_dev *dev,
 		play->vmax_mv = effect->u.periodic.magnitude; /*vmax level*/
 
 		if (aw8697->effect_id < 0 ||
-			aw8697->effect_id > aw8697->info.effect_max) {
+			aw8697->effect_id > aw8697->info.effect_max ||
+		    (aw8697->effect_id < aw8697->info.effect_id_boundary &&
+		     aw8697->effect_id >= aw8697->effects_count)) {
 			mutex_unlock(&aw8697->lock);
-			return 0;
+			return -EINVAL;
 		}
 		aw8697->is_custom_wave = 0;
 
@@ -4613,21 +4623,21 @@ static int aw8697_haptics_upload_effect(struct input_dev *dev,
 			pr_debug("%s: aw8697->effect_id=%d , aw8697->activate_mode = %d\n",
 				__func__, aw8697->effect_id, aw8697->activate_mode);
 			data[1] = aw8697->predefined[aw8697->effect_id].play_rate_us/1000000; /*second data*/
-			data[2] = aw8697->predefined[aw8697->effect_id].play_rate_us/1000;  /*millisecond data*/
+			data[2] = (aw8697->predefined[aw8697->effect_id].play_rate_us/1000) % 1000;  /*millisecond data*/
 		}
 		if (aw8697->effect_id >= aw8697->info.effect_id_boundary) {
 			aw8697->activate_mode = AW8697_HAPTIC_ACTIVATE_RTP_MODE;
 			pr_debug("%s: aw8697->effect_id=%d , aw8697->activate_mode = %d\n",
 				__func__, aw8697->effect_id, aw8697->activate_mode);
 			data[1] = aw8697->info.rtp_time[aw8697->effect_id]/1000; /*second data*/
-			data[2] = aw8697->info.rtp_time[aw8697->effect_id];  /*millisecond data*/
+			data[2] = aw8697->info.rtp_time[aw8697->effect_id] % 1000;  /*millisecond data*/
 		}
 		if (aw8697->effect_id == CUSTOME_WAVE_ID) {
 			aw8697->activate_mode = AW8697_HAPTIC_ACTIVATE_RTP_MODE;
 			pr_debug("%s: aw8697->effect_id=%d , aw8697->activate_mode = %d\n",
 				__func__, aw8697->effect_id, aw8697->activate_mode);
 			data[1] = aw8697->info.rtp_time[aw8697->effect_id]/1000; /*second data*/
-			data[2] = aw8697->info.rtp_time[aw8697->effect_id];  /*millisecond data*/
+			data[2] = aw8697->info.rtp_time[aw8697->effect_id] % 1000;  /*millisecond data*/
 			aw8697->is_custom_wave = 1;
 			rb_init();
 		}
@@ -5688,6 +5698,8 @@ static ssize_t aw8697_custom_wave_store(struct device *dev,
 	unsigned long  buf_len, period_size, offset;
 	int ret;
 	period_size = (aw8697->ram.base_addr >> 2);
+	if (!period_size)
+		return -EAGAIN;
 	offset = 0;
 	pr_debug(" write szie %d, period size %d", count, period_size);
 	if (count % period_size || count < period_size)

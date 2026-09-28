@@ -281,7 +281,8 @@ struct aw8697_dts_info {
 	unsigned int parameter1;
 	unsigned int effect_id_boundary;
 	unsigned int effect_max;
-	unsigned int rtp_time[175];
+	unsigned int *rtp_time;
+	unsigned int rtp_time_count;
 	unsigned int trig_config[3][5];
 	unsigned int bst_vol_default;
 	unsigned int bst_vol_ram;
