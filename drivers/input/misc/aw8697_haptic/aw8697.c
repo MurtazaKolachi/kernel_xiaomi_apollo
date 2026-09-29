@@ -2539,8 +2539,7 @@ static void aw8697_rtp_work_routine(struct work_struct *work)
 			release_firmware(rtp_file);
 		} else  {
 			vfree(aw8697_rtp);
-			aw8697_rtp = vzalloc(sizeof(*aw8697_rtp) +
-					     (aw8697->ram.base_addr >> 2));
+			aw8697_rtp = vmalloc(aw8697->ram.base_addr >> 2);
 			if (!aw8697_rtp) {
 				pr_err("%s: error allocating memory\n", __func__);
 				pm_relax(aw8697->dev);
@@ -4693,13 +4692,13 @@ static int aw8697_haptics_playback(struct input_dev *dev, int effect_id,
 		aw8697->activate_mode == AW8697_HAPTIC_ACTIVATE_RTP_MODE) {
 		pr_debug("%s: enter  rtp_mode\n", __func__);
 		//schedule_work(&aw8697->rtp_work);
-		/* Publish cancellation before the worker can acknowledge it. */
+		queue_work(aw8697->work_queue, &aw8697->rtp_work);
+		//if we are in the play mode, force to exit
 		if (val == 0) {
 			atomic_set(&aw8697->exit_in_rtp_loop, 1);
 			rb_force_exit();
 			wake_up_interruptible(&aw8697->stop_wait_q);
 		}
-		queue_work(aw8697->work_queue, &aw8697->rtp_work);
 	} else {
 		/*other mode */
 	}
@@ -4716,13 +4715,7 @@ static int aw8697_haptics_erase(struct input_dev *dev, int effect_id)
 	if (aw8697->osc_cali_run != 0)
 		return 0;
 
-	/* Drain queued playback and IRQ readers before changing their buffer mode. */
-	aw8697_haptics_playback(dev, effect_id, 0);
-	flush_work(&aw8697->vibrator_work);
-	flush_work(&aw8697->rtp_work);
-	flush_work(&aw8697->set_gain_work);
-	if (gpio_is_valid(aw8697->irq_gpio))
-		synchronize_irq(gpio_to_irq(aw8697->irq_gpio));
+	pr_debug("%s: enter\n", __func__);
 	aw8697->effect_type = 0;
 	aw8697->is_custom_wave = 0;
 	aw8697->duration = 0;
@@ -5692,7 +5685,7 @@ static ssize_t aw8697_custom_wave_show(struct device *dev,
 		get_rb_max_size(), get_rb_free_size());
 	len +=
 		snprintf(buf + len, PAGE_SIZE - len,
-		"custom_wave_id=%d;abi_version=2;", CUSTOME_WAVE_ID);
+		"custom_wave_id=%d;", CUSTOME_WAVE_ID);
 	return len;
 }
 
