@@ -36,7 +36,6 @@
 #include "aw8697_reg.h"
 #include "aw869xx_reg.h"
 #include "aw8697.h"
-#include "aw8697_gain.h"
 #include  "ringbuffer.h"
 
 
@@ -2059,8 +2058,7 @@ static int aw8697_haptic_play_effect_seq(struct aw8697 *aw8697,
 			else
 				aw8697_haptic_set_bst_vol(aw8697, aw8697->vmax);
 			aw8697_haptic_effect_strength(aw8697);
-			aw8697_haptic_set_gain(aw8697, aw8697->ram_gain_override ?
-					     aw8697->ram_gain : aw8697->level);
+			aw8697_haptic_set_gain(aw8697, aw8697->level);
 			aw8697_haptic_start(aw8697);
 		}
 		if (aw8697->activate_mode == AW8697_HAPTIC_ACTIVATE_RAM_LOOP_MODE) {
@@ -4555,7 +4553,6 @@ static int aw8697_haptics_upload_effect(struct input_dev *dev,
 	struct aw8697 *aw8697 = input_get_drvdata(dev);
 	struct qti_hap_play_info *play = &aw8697->play;
 	s16 data[CUSTOM_DATA_LEN];
-	s16 gain_word;
 	ktime_t rem;
 	s64 time_us;
 	int ret;
@@ -4587,7 +4584,6 @@ static int aw8697_haptics_upload_effect(struct input_dev *dev,
 		 mutex_lock(&aw8697->lock);
 	 }
 
-	aw8697->ram_gain_override = false;
 	if (aw8697->effect_type == FF_CONSTANT) {
 		pr_debug("%s: effect_type is  FF_CONSTANT! \n", __func__);
 		/*cont mode set duration */
@@ -4619,28 +4615,6 @@ static int aw8697_haptics_upload_effect(struct input_dev *dev,
 		     aw8697->effect_id >= aw8697->effects_count)) {
 			mutex_unlock(&aw8697->lock);
 			return -EINVAL;
-		}
-		/* Optional fourth short; legacy three-short uploads retain their
-		 * magnitude mapping. The tag prevents interpreting arbitrary data
-		 * as gain, and the cap never exceeds the stock full-scale value.
-		 */
-		if (effect->u.periodic.custom_len == 4 * sizeof(s16)) {
-			int gain;
-
-			if (copy_from_user(&gain_word,
-					   effect->u.periodic.custom_data + CUSTOM_DATA_LEN,
-					   sizeof(gain_word))) {
-				mutex_unlock(&aw8697->lock);
-				return -EFAULT;
-			}
-			gain = aw8697_decode_ram_gain(gain_word);
-			if (gain < 0 ||
-			    aw8697->effect_id >= aw8697->info.effect_id_boundary) {
-				mutex_unlock(&aw8697->lock);
-				return -EINVAL;
-			}
-			aw8697->ram_gain = gain;
-			aw8697->ram_gain_override = true;
 		}
 		aw8697->is_custom_wave = 0;
 
@@ -5718,7 +5692,7 @@ static ssize_t aw8697_custom_wave_show(struct device *dev,
 		get_rb_max_size(), get_rb_free_size());
 	len +=
 		snprintf(buf + len, PAGE_SIZE - len,
-		"custom_wave_id=%d;abi_version=2;ram_gain_abi=1;", CUSTOME_WAVE_ID);
+		"custom_wave_id=%d;abi_version=2;", CUSTOME_WAVE_ID);
 	return len;
 }
 
