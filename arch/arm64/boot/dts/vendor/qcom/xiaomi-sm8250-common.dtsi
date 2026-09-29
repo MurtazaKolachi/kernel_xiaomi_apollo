@@ -294,8 +294,6 @@
 			qcom,wf-pattern = [3e 3e];
 			qcom,wf-brake-pattern = [02 01 00 00];
 			qcom,wf-play-rate-us = <20000>;
-			qcom,wf-repeat-count = <1>;
-			qcom,wf-s-repeat-count = <1>;
 		};
 		wf_1 {
 			/*DOUBLE CLICK*/
@@ -304,8 +302,6 @@
 			qcom,wf-pattern = [7e 3e];
 			qcom,wf-brake-pattern = [03 01 00 00];
 			qcom,wf-play-rate-us = <20000>;
-			qcom,wf-repeat-count = <1>;
-			qcom,wf-s-repeat-count = <1>;
 		};
 		wf_2 {
 			/*TICK*/
@@ -314,8 +310,6 @@
 			qcom,wf-pattern = [7e 3e];
 			qcom,wf-brake-pattern = [02 01 00 00];
 			qcom,wf-play-rate-us = <20000>;
-			qcom,wf-repeat-count = <1>;
-			qcom,wf-s-repeat-count = <1>;
 		};
 		wf_3 {
 			/*THUD*/
@@ -324,8 +318,6 @@
 			qcom,wf-pattern = [3e 3e];
 			qcom,wf-brake-pattern = [02 01 00 00];
 			qcom,wf-play-rate-us = <20000>;
-			qcom,wf-repeat-count = <1>;
-			qcom,wf-s-repeat-count = <1>;
 		};
 		wf_4 {
 			/*POP*/
@@ -334,8 +326,6 @@
 			qcom,wf-pattern = [3e 3e];
 			qcom,wf-brake-pattern = [02 01 00 00];
 			qcom,wf-play-rate-us = <28000>;
-			qcom,wf-repeat-count = <1>;
-			qcom,wf-s-repeat-count = <1>;
 		};
 		wf_5 {
 			/*HEAVY CLICK*/
@@ -344,8 +334,6 @@
 			qcom,wf-pattern = [7e 7e 7e];
 			qcom,wf-brake-pattern = [03 03 01 00];
 			qcom,wf-play-rate-us = <20000>;
-			qcom,wf-repeat-count = <1>;
-			qcom,wf-s-repeat-count = <1>;
 		};
 		wf_6 {
 			/*id 6*/
@@ -354,8 +342,6 @@
 			qcom,wf-pattern = [3e 3e];
 			qcom,wf-brake-pattern = [02 01 00 00];
 			qcom,wf-play-rate-us = <20000>;
-			qcom,wf-repeat-count = <1>;
-			qcom,wf-s-repeat-count = <1>;
 		};
 		wf_7 {
 			/*id 7*/
@@ -364,8 +350,6 @@
 			qcom,wf-pattern = [3e 3e];
 			qcom,wf-brake-pattern = [02 01 00 00];
 			qcom,wf-play-rate-us = <20000>;
-			qcom,wf-repeat-count = <1>;
-			qcom,wf-s-repeat-count = <1>;
 		};
 		wf_8 {
 			/*id 8*/
@@ -374,8 +358,6 @@
 			qcom,wf-pattern = [3e 3e];
 			qcom,wf-brake-pattern = [02 01 00 00];
 			qcom,wf-play-rate-us = <20000>;
-			qcom,wf-repeat-count = <1>;
-			qcom,wf-s-repeat-count = <1>;
 		};
 		wf_9 {
 			/*id 9*/
@@ -384,8 +366,6 @@
 			qcom,wf-pattern = [3e 3e];
 			qcom,wf-brake-pattern = [02 01 00 00];
 			qcom,wf-play-rate-us = <20000>;
-			qcom,wf-repeat-count = <1>;
-			qcom,wf-s-repeat-count = <1>;
 		};
 	};
 };
