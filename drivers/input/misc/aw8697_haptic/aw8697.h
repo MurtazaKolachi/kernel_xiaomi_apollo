@@ -485,6 +485,8 @@ struct aw8697 {
 	bool vdd_enabled;
 	int effect_type;
 	int effect_id;
+	bool ram_gain_override;
+	u8 ram_gain;
 	int test_val;
 	int is_custom_wave;
 #endif
