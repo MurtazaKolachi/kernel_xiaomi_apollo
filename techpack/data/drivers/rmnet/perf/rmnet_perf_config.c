@@ -414,11 +414,12 @@ static int rmnet_perf_config_notify_cb(struct notifier_block *nb,
 			perf = NULL;
 		}
 		break;
-	case NETDEV_REGISTER:
-		pr_info("%s(): rmnet_perf netdevice register, name = %s\n",
+	case NETDEV_UP:
+		pr_info("%s(): rmnet_perf netdevice up, name = %s\n",
 			__func__, dev->name);
-		/* Check prevents us from allocating resources for every
-		 * interface
+		/* Wait until the virtual device is up so netmgr has configured
+		 * the real device's data format and DL marker version.
+		 * This also prevents allocating resources for every interface.
 		 */
 		if (!perf && !rmnet_perf_config_hook_registered() &&
 		    strncmp(dev->name, "rmnet_data", 10) == 0) {
