@@ -393,21 +393,25 @@ uvc_function_disable(struct usb_function *f)
 void
 uvc_function_connect(struct uvc_device *uvc)
 {
-	struct usb_composite_dev *cdev = uvc->func.config->cdev;
 	int ret;
 
+	if (!uvc || !uvc->func.config || !uvc->func.config->cdev)
+		return;
+
 	if ((ret = usb_function_activate(&uvc->func)) < 0)
-		INFO(cdev, "UVC connect failed with %d\n", ret);
+		INFO(uvc->func.config->cdev, "UVC connect failed with %d\n", ret);
 }
 
 void
 uvc_function_disconnect(struct uvc_device *uvc)
 {
-	struct usb_composite_dev *cdev = uvc->func.config->cdev;
 	int ret;
 
+	if (!uvc || !uvc->func.config || !uvc->func.config->cdev)
+		return;
+
 	if ((ret = usb_function_deactivate(&uvc->func)) < 0)
-		INFO(cdev, "UVC disconnect failed with %d\n", ret);
+		INFO(uvc->func.config->cdev, "UVC disconnect failed with %d\n", ret);
 }
 
 /* --------------------------------------------------------------------------
