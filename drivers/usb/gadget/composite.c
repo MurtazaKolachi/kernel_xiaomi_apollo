@@ -393,9 +393,16 @@ EXPORT_SYMBOL_GPL(usb_remove_function);
  */
 int usb_function_deactivate(struct usb_function *function)
 {
-	struct usb_composite_dev	*cdev = function->config->cdev;
+	struct usb_composite_dev	*cdev;
 	unsigned long			flags;
 	int				status = 0;
+
+	if (!function || !function->config || !function->config->cdev)
+		return 0;
+
+	cdev = function->config->cdev;
+	if (!cdev->gadget)
+		return 0;
 
 	spin_lock_irqsave(&cdev->lock, flags);
 
@@ -424,9 +431,16 @@ EXPORT_SYMBOL_GPL(usb_function_deactivate);
  */
 int usb_function_activate(struct usb_function *function)
 {
-	struct usb_composite_dev	*cdev = function->config->cdev;
+	struct usb_composite_dev	*cdev;
 	unsigned long			flags;
 	int				status = 0;
+
+	if (!function || !function->config || !function->config->cdev)
+		return 0;
+
+	cdev = function->config->cdev;
+	if (!cdev->gadget)
+		return 0;
 
 	spin_lock_irqsave(&cdev->lock, flags);
 
