@@ -13,6 +13,21 @@
 	};
 };
 
+/* GPIO32 is the WCD938x reset line.  "func2" is not a valid TLMM mux
+ * function on Kona and causes both pinctrl states to be rejected.
+ */
+&wcd938x_reset_active {
+	mux {
+		function = "gpio";
+	};
+};
+
+&wcd938x_reset_sleep {
+	mux {
+		function = "gpio";
+	};
+};
+
 &sde_dsi_suspend {
 	mux {
 		pins = "gpio12", "gpio50";
