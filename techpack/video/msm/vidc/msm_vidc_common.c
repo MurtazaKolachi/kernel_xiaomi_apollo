@@ -1467,6 +1467,7 @@ error:
 static void msm_vidc_comm_update_ctrl_limits(struct msm_vidc_inst *inst)
 {
 	struct v4l2_format *f;
+	struct v4l2_ctrl *ctrl;
 
 	if (inst->session_type == MSM_VIDC_ENCODER) {
 		f = &inst->fmts[OUTPUT_PORT].v4l2_fmt;
@@ -1476,9 +1477,13 @@ static void msm_vidc_comm_update_ctrl_limits(struct msm_vidc_inst *inst)
 			return;
 		msm_vidc_comm_update_ctrl(inst, V4L2_CID_MPEG_VIDEO_BITRATE,
 				&inst->capability.cap[CAP_BITRATE]);
-		msm_vidc_comm_update_ctrl(inst,
-				V4L2_CID_MPEG_VIDC_VIDEO_LTRCOUNT,
-				&inst->capability.cap[CAP_LTR_COUNT]);
+		ctrl = get_ctrl(inst, V4L2_CID_MPEG_VIDC_VIDEO_LTRCOUNT);
+		if (ctrl && inst->capability.cap[CAP_LTR_COUNT].step_size)
+			msm_vidc_comm_update_ctrl(inst,
+					V4L2_CID_MPEG_VIDC_VIDEO_LTRCOUNT,
+					&inst->capability.cap[CAP_LTR_COUNT]);
+		else if (ctrl)
+			v4l2_ctrl_activate(ctrl, false);
 		msm_vidc_comm_update_ctrl(inst,
 				V4L2_CID_MPEG_VIDEO_B_FRAMES,
 				&inst->capability.cap[CAP_BFRAME]);
