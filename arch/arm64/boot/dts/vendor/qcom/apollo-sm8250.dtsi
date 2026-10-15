@@ -7,6 +7,57 @@ And public attribution of xiaomi platforms(like apollo and so and)
 #include "xiaomi-sm8250-common.dtsi"
 #include "apollo-audio-overlay.dtsi"
 
+/* Apollo does not populate PM8009.  The reference-board nodes otherwise probe
+ * a nonexistent SPMI peripheral and RPMh resources on every boot.
+ */
+&spmi_bus {
+	qcom,pm8009@a {
+		status = "disabled";
+	};
+
+	qcom,pm8009@b {
+		status = "disabled";
+	};
+};
+
+&apps_rsc {
+	rpmh-regulator-smpf1 {
+		status = "disabled";
+	};
+
+	rpmh-regulator-smpf2 {
+		status = "disabled";
+	};
+
+	rpmh-regulator-ldof1 {
+		status = "disabled";
+	};
+
+	rpmh-regulator-ldof2 {
+		status = "disabled";
+	};
+
+	rpmh-regulator-ldof3 {
+		status = "disabled";
+	};
+
+	rpmh-regulator-ldof4 {
+		status = "disabled";
+	};
+
+	rpmh-regulator-ldof5 {
+		status = "disabled";
+	};
+
+	rpmh-regulator-ldof6 {
+		status = "disabled";
+	};
+
+	rpmh-regulator-ldof7 {
+		status = "disabled";
+	};
+};
+
 
 &qupv3_se4_spi_active {
 	mux {
