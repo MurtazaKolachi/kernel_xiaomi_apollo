@@ -915,8 +915,16 @@ cpufreq_freq_attr_ro(scaling_cur_freq);
 cpufreq_freq_attr_ro(bios_limit);
 cpufreq_freq_attr_ro(related_cpus);
 cpufreq_freq_attr_ro(affected_cpus);
-cpufreq_freq_attr_rw(scaling_min_freq);
-cpufreq_freq_attr_rw(scaling_max_freq);
+/* Android's Power HAL runs as root:system without CAP_DAC_OVERRIDE.  Keep the
+ * policy limits group-writable when a policy is created or recreated; ueventd
+ * assigns the files to system:system.
+ */
+static struct freq_attr scaling_min_freq =
+__ATTR(scaling_min_freq, 0664, show_scaling_min_freq,
+	store_scaling_min_freq);
+static struct freq_attr scaling_max_freq =
+__ATTR(scaling_max_freq, 0664, show_scaling_max_freq,
+	store_scaling_max_freq);
 cpufreq_freq_attr_rw(scaling_governor);
 cpufreq_freq_attr_rw(scaling_setspeed);
 
