@@ -59,11 +59,6 @@ enum binderfs_stats_mode {
 	STATS_GLOBAL,
 };
 
-struct binder_features {
-	bool oneway_spam_detection;
-	bool freeze_notification;
-};
-
 static const match_table_t tokens = {
 	{ Opt_max, "max=%d" },
 	{ Opt_stats_mode, "stats=%s" },
